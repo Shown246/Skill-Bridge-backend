@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import * as jose from 'jose';
 import { env } from '../config/env.js';
 import { prisma } from '../config/db.js';
-import { UnauthorizedError, AppError } from '../shared/errors/app-error.js';
+import { UnauthorizedError, ForbiddenError, AppError } from '../shared/errors/app-error.js';
 
 // Construct the JWKS set
 const JWKS_URL = `${env.BETTER_AUTH_URL}/api/auth/jwks`;
@@ -95,4 +95,17 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
       next(error);
     }
   }
+};
+
+export const requireRole = (allowedRoles: 'STUDENT' | 'TUTOR' | 'ADMIN' | ('STUDENT' | 'TUTOR' | 'ADMIN')[]) => {
+  const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
+  return (req: Request, res: Response, next: NextFunction) => {
+    if (!req.user) {
+      return next(new UnauthorizedError('Authentication required.'));
+    }
+    if (!roles.includes(req.user.role)) {
+      return next(new ForbiddenError('Access denied.'));
+    }
+    next();
+  };
 };

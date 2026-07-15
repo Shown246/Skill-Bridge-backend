@@ -11,6 +11,7 @@ import { logger } from './shared/logging/logger.js';
 import { toNodeHandler } from 'better-auth/node';
 import { auth } from './auth/auth.js';
 import userRoutes from './modules/users/user.routes.js';
+import categoryRoutes from './modules/categories/category.routes.js';
 
 const app = express();
 
@@ -97,6 +98,7 @@ app.get('/ready', async (req, res) => {
 
 // 8.1 API Version 1 Routes
 app.use('/api/v1', userRoutes);
+app.use('/api/v1', categoryRoutes);
 
 // 9. Not-found handler
 app.use((req, res, next) => {
