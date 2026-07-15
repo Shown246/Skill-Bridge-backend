@@ -96,3 +96,24 @@ export const publicTutorSearchSchema = z.object({
     )
     .default(20),
 });
+
+export const slotQuerySchema = z.object({
+  dateFrom: z.string().datetime(),
+  dateTo: z.string().datetime(),
+}).refine((data) => {
+  const from = new Date(data.dateFrom);
+  const to = new Date(data.dateTo);
+  return to > from;
+}, {
+  message: "dateTo must be after dateFrom",
+  path: ["dateTo"],
+}).refine((data) => {
+  const from = new Date(data.dateFrom);
+  const to = new Date(data.dateTo);
+  const diff = to.getTime() - from.getTime();
+  return diff <= 31 * 24 * 60 * 60 * 1000;
+}, {
+  message: "Date range must not exceed 31 days",
+  path: ["dateTo"],
+});
+

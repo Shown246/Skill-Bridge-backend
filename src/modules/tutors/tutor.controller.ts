@@ -5,7 +5,10 @@ import {
   approvalSchema,
   getAdminTutorsQuerySchema,
   publicTutorSearchSchema,
+  slotQuerySchema,
 } from './tutor.schemas.js';
+import { getTutorSlots } from './tutor.slots.service.js';
+
 
 export const getOwnProfile = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -104,3 +107,18 @@ export const getPublicTutorById = async (req: Request, res: Response, next: Next
     next(error);
   }
 };
+
+export const getPublicTutorSlots = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { tutorId } = req.params;
+    const validatedQuery = slotQuerySchema.parse(req.query);
+    const result = await getTutorSlots(tutorId, validatedQuery.dateFrom, validatedQuery.dateTo);
+    res.status(200).json({
+      success: true,
+      data: result,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
