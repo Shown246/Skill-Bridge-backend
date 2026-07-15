@@ -32,6 +32,10 @@ model User {
   sessions      Session[]
   accounts      Account[]
 
+  // Relations
+  tutorProfile   TutorProfile?
+  approvedTutors TutorProfile[] @relation("ApprovedByAdmin")
+
   @@map("user")
 }
 
@@ -88,6 +92,37 @@ model Jwks {
   @@map("jwks")
 }
 
+enum TutorApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model TutorProfile {
+  id              String              @id @default(uuid())
+  userId          String              @unique
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  headline        String
+  bio             String
+  experienceYears Int                 @default(0)
+  hourlyRate      Decimal             @db.Decimal(10, 2)
+  currencyCode    String              @default("USD")
+  approvalStatus  TutorApprovalStatus @default(PENDING)
+  rejectionReason String?
+  approvedAt      DateTime?
+  approvedById    String?
+  approvedBy      User?               @relation("ApprovedByAdmin", fields: [approvedById], references: [id])
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  // Relations
+  categories      TutorCategory[]
+
+  @@index([approvalStatus])
+  @@index([hourlyRate])
+  @@map("tutor_profile")
+}
+
 model Category {
   id          String   @id @default(uuid())
   name        String   @unique
@@ -97,5 +132,19 @@ model Category {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Relations
+  tutors      TutorCategory[]
+
   @@map("category")
+}
+
+model TutorCategory {
+  tutorProfileId String
+  tutorProfile   TutorProfile @relation(fields: [tutorProfileId], references: [id], onDelete: Cascade)
+  categoryId     String
+  category       Category     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@id([tutorProfileId, categoryId])
+  @@map("tutor_category")
 }

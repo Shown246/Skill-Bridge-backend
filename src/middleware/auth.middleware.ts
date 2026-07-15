@@ -105,3 +105,13 @@ export const requireRole = (allowedRoles: 'STUDENT' | 'TUTOR' | 'ADMIN' | ('STUD
     next();
   };
 };
+
+export const requireActive = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.user) {
+    return next(new UnauthorizedError('Authentication required.'));
+  }
+  if (req.user.status !== 'ACTIVE') {
+    return next(new ForbiddenError('Access denied. User status is not active.'));
+  }
+  next();
+};
