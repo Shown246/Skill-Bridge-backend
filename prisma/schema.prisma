@@ -33,8 +33,12 @@ model User {
   accounts      Account[]
 
   // Relations
-  tutorProfile   TutorProfile?
-  approvedTutors TutorProfile[] @relation("ApprovedByAdmin")
+  tutorProfile      TutorProfile?
+  approvedTutors    TutorProfile[]         @relation("ApprovedByAdmin")
+  studentBookings   Booking[]              @relation("StudentBookings")
+  cancelledBookings Booking[]              @relation("CancelledByActor")
+  statusHistory     BookingStatusHistory[]
+  reviews           Review[]
 
   @@map("user")
 }
@@ -118,6 +122,8 @@ model TutorProfile {
   // Relations
   categories      TutorCategory[]
   availability    WeeklyAvailability[]
+  bookings        Booking[]
+  reviews         Review[]
 
   @@index([approvalStatus])
   @@index([hourlyRate])
@@ -135,6 +141,7 @@ model Category {
 
   // Relations
   tutors      TutorCategory[]
+  bookings    Booking[]
 
   @@map("category")
 }
@@ -163,5 +170,75 @@ model WeeklyAvailability {
 
   @@index([tutorProfileId, dayOfWeek])
   @@map("weekly_availability")
+}
+
+enum BookingStatus {
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+model Booking {
+  id                 String                 @id @default(uuid())
+  studentId          String
+  student            User                   @relation("StudentBookings", fields: [studentId], references: [id], onDelete: Cascade)
+  tutorProfileId     String
+  tutorProfile       TutorProfile           @relation(fields: [tutorProfileId], references: [id], onDelete: Cascade)
+  categoryId         String
+  category           Category               @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  startAt            DateTime
+  endAt              DateTime
+  durationMinutes    Int
+  hourlyRateSnapshot Decimal                @db.Decimal(10, 2)
+  quotedPrice        Decimal                @db.Decimal(10, 2)
+  currencyCode       String                 @default("USD")
+  note               String?
+  status             BookingStatus          @default(CONFIRMED)
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancelledBy        User?                  @relation("CancelledByActor", fields: [cancelledById], references: [id])
+  cancellationReason String?
+  completedAt        DateTime?
+  createdAt          DateTime               @default(now())
+  updatedAt          DateTime               @updatedAt
+  statusHistory      BookingStatusHistory[]
+  review             Review?
+
+  @@index([studentId, startAt])
+  @@index([tutorProfileId, startAt])
+  @@index([status, startAt])
+  @@index([categoryId])
+  @@map("booking")
+}
+
+model BookingStatusHistory {
+  id          String         @id @default(uuid())
+  bookingId   String
+  booking     Booking        @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  fromStatus  BookingStatus?
+  toStatus    BookingStatus
+  actorUserId String
+  actorUser   User           @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
+  actorRole   UserRole
+  reason      String?
+  createdAt   DateTime       @default(now())
+
+  @@index([bookingId, createdAt])
+  @@map("booking_status_history")
+}
+
+model Review {
+  id             String       @id @default(uuid())
+  bookingId      String       @unique
+  booking        Booking      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  studentId      String
+  student        User         @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  tutorProfileId String
+  tutorProfile   TutorProfile @relation(fields: [tutorProfileId], references: [id], onDelete: Cascade)
+  rating         Int
+  comment        String
+  createdAt      DateTime     @default(now())
+
+  @@map("review")
 }
 
