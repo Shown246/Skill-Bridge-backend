@@ -11,6 +11,7 @@ function redact(obj: any, visited = new WeakSet()): any {
     };
   }
   if (typeof obj !== 'object') return obj;
+  if (obj instanceof Date || obj instanceof RegExp) return obj;
   if (visited.has(obj)) return '[Circular]';
   visited.add(obj);
 
