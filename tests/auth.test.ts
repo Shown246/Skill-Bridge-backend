@@ -132,8 +132,9 @@ describe('Better Auth & Identity Integration', () => {
           role: 'STUDENT',
         });
 
-      cookieHeaders = res.headers['set-cookie'];
-      expect(cookieHeaders).toBeDefined();
+      const rawCookie = res.headers['set-cookie'];
+      cookieHeaders = Array.isArray(rawCookie) ? rawCookie : typeof rawCookie === 'string' ? [rawCookie] : [];
+      expect(cookieHeaders.length).toBeGreaterThan(0);
 
       // Fetch JWT using session cookie
       const tokenRes = await request(app)

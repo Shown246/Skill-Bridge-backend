@@ -6,11 +6,7 @@ import { UnauthorizedError, ForbiddenError, AppError } from '../shared/errors/ap
 
 // Construct the JWKS set
 const JWKS_URL = `${env.BETTER_AUTH_URL}/api/auth/jwks`;
-const JWKS = jose.createRemoteJWKSet(new URL(JWKS_URL), {
-  [jose.customFetch]: (url, init) => {
-    return globalThis.fetch(url, init);
-  },
-});
+const JWKS = jose.createRemoteJWKSet(new URL(JWKS_URL));
 
 // Extend Request type to hold user information
 declare global {

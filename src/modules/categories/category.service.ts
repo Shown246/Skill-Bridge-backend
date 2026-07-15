@@ -1,5 +1,5 @@
 import { categoryRepository } from './category.repository.js';
-import { ConflictError, NotFoundError } from '../../shared/errors/app-error.js';
+import { ConflictError, NotFoundError, ValidationError } from '../../shared/errors/app-error.js';
 
 export function generateSlug(name: string): string {
   return name
@@ -15,6 +15,10 @@ export class CategoryService {
   async createCategory(data: { name: string; slug?: string; description?: string | null }) {
     // Generate or format slug
     const slug = data.slug ? data.slug.toLowerCase().trim() : generateSlug(data.name);
+
+    if (slug.length < 2) {
+      throw new ValidationError('Category slug must be at least 2 characters.');
+    }
 
     // Case-insensitive uniqueness check on name
     const existingByName = await categoryRepository.findByName(data.name);
@@ -65,6 +69,9 @@ export class CategoryService {
 
     if (data.slug !== undefined && data.slug !== existingCategory.slug) {
       const slug = data.slug.toLowerCase().trim();
+      if (slug.length < 2) {
+        throw new ValidationError('Category slug must be at least 2 characters.');
+      }
       const existingBySlug = await categoryRepository.findBySlug(slug);
       if (existingBySlug && existingBySlug.id !== id) {
         throw new ConflictError(
