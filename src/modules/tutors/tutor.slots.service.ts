@@ -48,11 +48,11 @@ export async function getTutorSlots(tutorId: string, dateFromStr: string, dateTo
       if (hasBookingOverlap) continue;
 
       // Check availability
-      if (slotStart.getUTCDay() !== slotEnd.getUTCDay()) continue; // cannot cross midnight
-
       const dayOfWeek = slotStart.getUTCDay();
       const startMinute = slotStart.getUTCHours() * 60 + slotStart.getUTCMinutes();
       const endMinute = startMinute + duration;
+
+      if (endMinute > 1440) continue; // cannot cross midnight (slots ending exactly at midnight are allowed)
 
       const isAvailable = weeklyAvailability.some(
         (av) => av.dayOfWeek === dayOfWeek && av.startMinuteUtc <= startMinute && av.endMinuteUtc >= endMinute

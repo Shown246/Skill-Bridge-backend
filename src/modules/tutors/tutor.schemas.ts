@@ -98,8 +98,8 @@ export const publicTutorSearchSchema = z.object({
 });
 
 export const slotQuerySchema = z.object({
-  dateFrom: z.string().datetime(),
-  dateTo: z.string().datetime(),
+  dateFrom: z.string().datetime({ offset: true }),
+  dateTo: z.string().datetime({ offset: true }),
 }).refine((data) => {
   const from = new Date(data.dateFrom);
   const to = new Date(data.dateTo);

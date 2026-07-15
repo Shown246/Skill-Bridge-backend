@@ -239,6 +239,7 @@ model Review {
   comment        String
   createdAt      DateTime     @default(now())
 
+  @@index([tutorProfileId, createdAt])
   @@map("review")
 }
 
