@@ -19,13 +19,16 @@ export const auth = betterAuth({
     before: createAuthMiddleware(async (ctx) => {
       if (ctx.path === '/sign-up/email') {
         const body = ctx.body;
-        const role = body?.role;
-        if (role !== 'STUDENT' && role !== 'TUTOR') {
-          throw new APIError('BAD_REQUEST', {
-            message: 'Invalid registration role. Only STUDENT or TUTOR are allowed.',
-          });
-        }
         if (body) {
+          if (!body.role) {
+            body.role = 'STUDENT';
+          }
+          const role = body.role;
+          if (role !== 'STUDENT' && role !== 'TUTOR') {
+            throw new APIError('BAD_REQUEST', {
+              message: 'Invalid registration role. Only STUDENT or TUTOR are allowed.',
+            });
+          }
           body.status = 'ACTIVE';
         }
       }

@@ -73,8 +73,8 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
     };
 
     // If user is banned and path is NOT GET /api/v1/me, reject access.
-    const fullPath = req.baseUrl + req.path;
-    const isGetMe = req.method === 'GET' && fullPath.endsWith('/api/v1/me');
+    const normalizedPath = req.originalUrl.split('?')[0].replace(/\/$/, '');
+    const isGetMe = req.method === 'GET' && normalizedPath === '/api/v1/me';
 
     if (user.status === 'BANNED' && !isGetMe) {
       throw new AppError(403, 'USER_BANNED', 'User status is BANNED.');
@@ -85,16 +85,14 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
     console.error('requireAuth verification error:', error);
     if (error instanceof AppError) {
       next(error);
-    } else if (error.code === 'ERR_JWT_EXPIRED') {
-      next(new UnauthorizedError('Token has expired.'));
-    } else if (
-      error.code === 'ERR_JWT_CLAIM_VALIDATION_FAILED' ||
-      error.code === 'ERR_JWS_SIGNATURE_VERIFICATION_FAILED' ||
-      error.code === 'ERR_JWT_MALFORMED'
-    ) {
-      next(new UnauthorizedError('Invalid token.'));
+    } else if (error.code?.startsWith('ERR_JWT_') || error.code?.startsWith('ERR_JWS_')) {
+      const isExpired = error.code === 'ERR_JWT_EXPIRED';
+      const errorCode = isExpired ? 'TOKEN_EXPIRED' : 'TOKEN_INVALID';
+      const errorMsg = isExpired ? 'Token has expired.' : 'Invalid token.';
+      next(new AppError(401, errorCode, errorMsg));
     } else {
-      next(new UnauthorizedError(error.message || 'Authentication failed.'));
+      // Pass general/database errors down directly to prevent info leak (errorHandler turns them to 500)
+      next(error);
     }
   }
 };
