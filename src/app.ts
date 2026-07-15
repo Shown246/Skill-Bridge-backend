@@ -8,6 +8,10 @@ import { errorHandler } from './middleware/error.middleware.js';
 import { NotFoundError } from './shared/errors/app-error.js';
 import { logger } from './shared/logging/logger.js';
 
+import { toNodeHandler } from 'better-auth/node';
+import { auth } from './auth/auth.js';
+import userRoutes from './modules/users/user.routes.js';
+
 const app = express();
 
 // 1. Request ID middleware
@@ -40,8 +44,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// 5. [Phase 2 Placeholder] Better Auth catch-all handler goes here
-// app.use('/api/auth', betterAuthHandler);
+// 5. Better Auth catch-all handler
+app.all('/api/auth/*', toNodeHandler(auth));
 
 // 6. JSON body parsing (applied after auth to not break auth raw body parsing if needed)
 app.use(express.json());
@@ -90,6 +94,9 @@ app.get('/ready', async (req, res) => {
     });
   }
 });
+
+// 8.1 API Version 1 Routes
+app.use('/api/v1', userRoutes);
 
 // 9. Not-found handler
 app.use((req, res, next) => {
