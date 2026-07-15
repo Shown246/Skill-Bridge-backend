@@ -117,6 +117,7 @@ model TutorProfile {
 
   // Relations
   categories      TutorCategory[]
+  availability    WeeklyAvailability[]
 
   @@index([approvalStatus])
   @@index([hourlyRate])
@@ -148,3 +149,19 @@ model TutorCategory {
   @@id([tutorProfileId, categoryId])
   @@map("tutor_category")
 }
+
+model WeeklyAvailability {
+  id             String       @id @default(uuid())
+  tutorProfileId String
+  tutorProfile   TutorProfile @relation(fields: [tutorProfileId], references: [id], onDelete: Cascade)
+  dayOfWeek      Int          // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  startMinuteUtc Int          // 0 to 1439
+  endMinuteUtc   Int          // 1 to 1440
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([tutorProfileId, dayOfWeek])
+  @@map("weekly_availability")
+}
+
