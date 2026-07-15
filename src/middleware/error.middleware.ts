@@ -30,7 +30,12 @@ export const errorHandler = (
     if (err.code === 'P2002') {
       statusCode = 409;
       code = 'CONFLICT';
-      const targets = (err.meta?.target as string[]) || [];
+      const targetsRaw = err.meta?.target;
+      const targets = Array.isArray(targetsRaw)
+        ? targetsRaw
+        : typeof targetsRaw === 'string'
+          ? [targetsRaw]
+          : [];
       message = targets.length > 0
         ? `A record with this ${targets.join(', ')} already exists.`
         : 'Unique constraint failed.';

@@ -2,7 +2,7 @@ import { env } from '../../config/env.js';
 
 const REDACT_KEYS = ['password', 'token', 'secret', 'authorization', 'cookie', 'jwt', 'apikey'];
 
-function redact(obj: any): any {
+function redact(obj: any, visited = new WeakSet()): any {
   if (obj === null || obj === undefined) return obj;
   if (obj instanceof Error) {
     return {
@@ -11,14 +11,17 @@ function redact(obj: any): any {
     };
   }
   if (typeof obj !== 'object') return obj;
-  if (Array.isArray(obj)) return obj.map(redact);
+  if (visited.has(obj)) return '[Circular]';
+  visited.add(obj);
+
+  if (Array.isArray(obj)) return obj.map((item) => redact(item, visited));
 
   const redacted: Record<string, any> = {};
   for (const key of Object.keys(obj)) {
     if (REDACT_KEYS.some((k) => key.toLowerCase().includes(k.toLowerCase()))) {
       redacted[key] = '[REDACTED]';
     } else {
-      redacted[key] = redact(obj[key]);
+      redacted[key] = redact(obj[key], visited);
     }
   }
   return redacted;
@@ -32,7 +35,7 @@ export const logger = {
       message,
       ...(context ? { context: redact(context) } : {}),
     };
-    if (env.NODE_ENV === 'test') return;
+    if (env.NODE_ENV === 'test' && !process.env.DEBUG) return;
     console.log(JSON.stringify(logEntry));
   },
 
@@ -43,7 +46,7 @@ export const logger = {
       message,
       ...(context ? { context: redact(context) } : {}),
     };
-    if (env.NODE_ENV === 'test') return;
+    if (env.NODE_ENV === 'test' && !process.env.DEBUG) return;
     console.warn(JSON.stringify(logEntry));
   },
 
@@ -61,7 +64,7 @@ export const logger = {
       ...(errorObj ? { error: redact(errorObj) } : {}),
       ...(context ? { context: redact(context) } : {}),
     };
-    if (env.NODE_ENV === 'test') return;
+    if (env.NODE_ENV === 'test' && !process.env.DEBUG) return;
     console.error(JSON.stringify(logEntry));
   },
 
@@ -73,7 +76,7 @@ export const logger = {
       message,
       ...(context ? { context: redact(context) } : {}),
     };
-    if (env.NODE_ENV === 'test') return;
+    if (env.NODE_ENV === 'test' && !process.env.DEBUG) return;
     console.debug(JSON.stringify(logEntry));
   },
 };
