@@ -1,0 +1,103 @@
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import { env } from './config/env.js';
+import { prisma } from './config/db.js';
+import { requestIdMiddleware } from './middleware/request-id.js';
+import { errorHandler } from './middleware/error.middleware.js';
+import { NotFoundError } from './shared/errors/app-error.js';
+import { logger } from './shared/logging/logger.js';
+
+const app = express();
+
+// 1. Request ID middleware
+app.use(requestIdMiddleware);
+
+// 2. Security headers
+app.use(helmet());
+
+// 3. CORS configuration
+app.use(
+  cors({
+    origin: env.FRONTEND_ORIGIN,
+    credentials: true,
+  })
+);
+
+// 4. Request logging middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const latency = Date.now() - start;
+    logger.info(`${req.method} ${req.originalUrl} ${res.statusCode} - ${latency}ms`, {
+      method: req.method,
+      path: req.originalUrl,
+      status: res.statusCode,
+      latencyMs: latency,
+      requestId: req.requestId,
+    });
+  });
+  next();
+});
+
+// 5. [Phase 2 Placeholder] Better Auth catch-all handler goes here
+// app.use('/api/auth', betterAuthHandler);
+
+// 6. JSON body parsing (applied after auth to not break auth raw body parsing if needed)
+app.use(express.json());
+
+// 7. [Future Placeholder] Rate Limiter
+// app.use(rateLimiter);
+
+// 8. Routes
+// Health Check (Unversioned)
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    success: true,
+    data: {
+      status: 'UP',
+      timestamp: new Date().toISOString(),
+    },
+    requestId: req.requestId,
+  });
+});
+
+// Readiness Check (Unversioned)
+app.get('/ready', async (req, res) => {
+  try {
+    // Verify database connection is alive
+    await prisma.$queryRaw`SELECT 1`;
+    res.status(200).json({
+      success: true,
+      data: {
+        status: 'READY',
+        database: 'CONNECTED',
+        timestamp: new Date().toISOString(),
+      },
+      requestId: req.requestId,
+    });
+  } catch (error) {
+    logger.error('Readiness check failed - Database unavailable', error, {
+      requestId: req.requestId,
+    });
+    res.status(503).json({
+      success: false,
+      error: {
+        code: 'DATABASE_UNAVAILABLE',
+        message: 'Database connection failed.',
+      },
+      requestId: req.requestId,
+    });
+  }
+});
+
+// 9. Not-found handler
+app.use((req, res, next) => {
+  next(new NotFoundError(`Route ${req.method} ${req.path} not found`));
+});
+
+// 10. Central error handler
+app.use(errorHandler);
+
+export { app };
+export default app;
