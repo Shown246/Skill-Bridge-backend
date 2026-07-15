@@ -4,6 +4,7 @@ import {
   upsertProfileSchema,
   approvalSchema,
   getAdminTutorsQuerySchema,
+  publicTutorSearchSchema,
 } from './tutor.schemas.js';
 
 export const getOwnProfile = async (req: Request, res: Response, next: NextFunction) => {
@@ -68,6 +69,33 @@ export const moderateTutorApproval = async (req: Request, res: Response, next: N
       req.user!.id,
       validatedBody
     );
+    res.status(200).json({
+      success: true,
+      data: profile,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const searchPublicTutors = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const validatedQuery = publicTutorSearchSchema.parse(req.query);
+    const result = await tutorService.searchPublicTutors(validatedQuery);
+    res.status(200).json({
+      success: true,
+      data: result.tutors,
+      pagination: result.pagination,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getPublicTutorById = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { tutorId } = req.params;
+    const profile = await tutorService.getPublicTutorById(tutorId);
     res.status(200).json({
       success: true,
       data: profile,

@@ -204,6 +204,46 @@ export class TutorService {
       },
     });
   }
+  async searchPublicTutors(options: {
+    q?: string;
+    category?: string;
+    minRate?: number;
+    maxRate?: number;
+    sort: string;
+    page: number;
+    pageSize: number;
+  }) {
+    const skip = (options.page - 1) * options.pageSize;
+    const take = options.pageSize;
+
+    const { tutors, total } = await tutorRepository.findPublicTutors({
+      q: options.q,
+      categorySlug: options.category,
+      minRate: options.minRate,
+      maxRate: options.maxRate,
+      sortBy: options.sort,
+      skip,
+      take,
+    });
+
+    return {
+      tutors,
+      pagination: {
+        page: options.page,
+        pageSize: options.pageSize,
+        totalItems: total,
+        totalPages: Math.ceil(total / options.pageSize),
+      },
+    };
+  }
+
+  async getPublicTutorById(id: string) {
+    const profile = await tutorRepository.findPublicById(id);
+    if (!profile) {
+      throw new NotFoundError('Tutor not found.');
+    }
+    return profile;
+  }
 }
 
 export const tutorService = new TutorService();

@@ -64,3 +64,35 @@ export const getAdminTutorsQuerySchema = z.object({
     )
     .default(20),
 });
+
+export const publicTutorSearchSchema = z.object({
+  q: z.string().optional(),
+  category: z.string().optional(),
+  minRate: z
+    .preprocess(
+      (val) => (val ? parseFloat(val as string) : undefined),
+      z.number().nonnegative().optional()
+    )
+    .optional(),
+  maxRate: z
+    .preprocess(
+      (val) => (val ? parseFloat(val as string) : undefined),
+      z.number().positive().optional()
+    )
+    .optional(),
+  sort: z
+    .enum(['recommended', 'rating_desc', 'price_asc', 'price_desc', 'reviews_desc'])
+    .default('recommended'),
+  page: z
+    .preprocess(
+      (val) => (val ? parseInt(val as string, 10) : undefined),
+      z.number().int().positive()
+    )
+    .default(1),
+  pageSize: z
+    .preprocess(
+      (val) => (val ? parseInt(val as string, 10) : undefined),
+      z.number().int().positive().max(100)
+    )
+    .default(20),
+});

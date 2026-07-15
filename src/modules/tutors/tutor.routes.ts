@@ -6,9 +6,15 @@ import {
   getAdminTutors,
   getAdminTutorById,
   moderateTutorApproval,
+  searchPublicTutors,
+  getPublicTutorById,
 } from './tutor.controller.js';
 
 const router = Router();
+
+// Public endpoints (no auth required)
+router.get('/tutors', searchPublicTutors);
+router.get('/tutors/:tutorId', getPublicTutorById);
 
 // Tutor-facing endpoints
 router.get('/tutor/profile', requireAuth, requireRole('TUTOR'), requireActive, getOwnProfile);
