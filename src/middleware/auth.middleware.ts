@@ -29,11 +29,11 @@ declare global {
 export const requireAuth = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!authHeader || !authHeader.toLowerCase().startsWith('bearer ')) {
       throw new UnauthorizedError('Authentication token is required.');
     }
 
-    const token = authHeader.split(' ')[1];
+    const token = authHeader.substring(7).trim();
     if (!token) {
       throw new UnauthorizedError('Authentication token is required.');
     }
@@ -82,7 +82,6 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
 
     next();
   } catch (error: any) {
-    console.error('requireAuth verification error:', error);
     if (error instanceof AppError) {
       next(error);
     } else if (error.code?.startsWith('ERR_JWT_') || error.code?.startsWith('ERR_JWS_')) {
@@ -91,6 +90,7 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
       const errorMsg = isExpired ? 'Token has expired.' : 'Invalid token.';
       next(new AppError(401, errorCode, errorMsg));
     } else {
+      console.error('requireAuth unexpected error:', error);
       // Pass general/database errors down directly to prevent info leak (errorHandler turns them to 500)
       next(error);
     }
