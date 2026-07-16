@@ -80,6 +80,12 @@ export const publicTutorSearchSchema = z.object({
       z.number().positive().optional()
     )
     .optional(),
+  minRating: z
+    .preprocess(
+      (val) => (val ? parseFloat(val as string) : undefined),
+      z.number().min(1).max(5).optional()
+    )
+    .optional(),
   sort: z
     .enum(['recommended', 'rating_desc', 'price_asc', 'price_desc', 'reviews_desc'])
     .default('recommended'),

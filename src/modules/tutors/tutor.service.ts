@@ -209,6 +209,7 @@ export class TutorService {
     category?: string;
     minRate?: number;
     maxRate?: number;
+    minRating?: number;
     sort: string;
     page: number;
     pageSize: number;
@@ -221,6 +222,7 @@ export class TutorService {
       categorySlug: options.category,
       minRate: options.minRate,
       maxRate: options.maxRate,
+      minRating: options.minRating,
       sortBy: options.sort,
       skip,
       take,
@@ -242,7 +244,15 @@ export class TutorService {
     if (!profile) {
       throw new NotFoundError('Tutor not found.');
     }
-    return profile;
+    const { reviews, ...tutor } = profile;
+    return {
+      ...tutor,
+      averageRating:
+        reviews.length === 0
+          ? 0
+          : reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length,
+      reviewCount: reviews.length,
+    };
   }
 }
 

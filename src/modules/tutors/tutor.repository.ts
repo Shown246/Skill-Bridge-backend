@@ -150,6 +150,7 @@ export class TutorRepository {
     categorySlug?: string;
     minRate?: number;
     maxRate?: number;
+    minRating?: number;
     sortBy: string;
     skip: number;
     take: number;
@@ -190,56 +191,67 @@ export class TutorRepository {
       }
     }
 
-    // Determine sort order
-    let orderBy: Prisma.TutorProfileOrderByWithRelationInput;
-    switch (options.sortBy) {
-      case 'price_asc':
-        orderBy = { hourlyRate: 'asc' };
-        break;
-      case 'price_desc':
-        orderBy = { hourlyRate: 'desc' };
-        break;
-      // rating_desc and reviews_desc will be implemented when Review model exists
-      // For now, fall through to recommended (newest first)
-      case 'rating_desc':
-      case 'reviews_desc':
-      case 'recommended':
-      default:
-        orderBy = { createdAt: 'desc' };
-        break;
-    }
-
-    const [tutors, total] = await Promise.all([
-      prisma.tutorProfile.findMany({
-        where,
-        skip: options.skip,
-        take: options.take,
-        orderBy,
-        include: {
-          categories: {
-            include: {
-              category: {
-                select: {
-                  id: true,
-                  name: true,
-                  slug: true,
-                },
+    const candidates = await prisma.tutorProfile.findMany({
+      where,
+      include: {
+        categories: {
+          include: {
+            category: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
               },
             },
           },
-          user: {
-            select: {
-              id: true,
-              name: true,
-              image: true,
-            },
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            image: true,
           },
         },
-      }),
-      prisma.tutorProfile.count({ where }),
-    ]);
+        reviews: { select: { rating: true } },
+      },
+    });
 
-    return { tutors, total };
+    const decorated = candidates.map(({ reviews, ...tutor }) => ({
+      ...tutor,
+      averageRating:
+        reviews.length === 0
+          ? 0
+          : reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length,
+      reviewCount: reviews.length,
+    }));
+    const filtered = options.minRating === undefined
+      ? decorated
+      : decorated.filter((tutor) => tutor.averageRating >= options.minRating!);
+
+    filtered.sort((left, right) => {
+      if (options.sortBy === 'price_asc') {
+        return Number(left.hourlyRate) - Number(right.hourlyRate);
+      }
+      if (options.sortBy === 'price_desc') {
+        return Number(right.hourlyRate) - Number(left.hourlyRate);
+      }
+      if (options.sortBy === 'rating_desc') {
+        return right.averageRating - left.averageRating
+          || right.reviewCount - left.reviewCount
+          || right.createdAt.getTime() - left.createdAt.getTime();
+      }
+      if (options.sortBy === 'reviews_desc') {
+        return right.reviewCount - left.reviewCount
+          || right.averageRating - left.averageRating
+          || right.createdAt.getTime() - left.createdAt.getTime();
+      }
+      return right.createdAt.getTime() - left.createdAt.getTime();
+    });
+
+    return {
+      tutors: filtered.slice(options.skip, options.skip + options.take),
+      total: filtered.length,
+    };
   }
 
   async findPublicById(id: string) {
@@ -270,6 +282,7 @@ export class TutorRepository {
             image: true,
           },
         },
+        reviews: { select: { rating: true } },
       },
     });
   }
