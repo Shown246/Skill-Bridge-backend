@@ -636,4 +636,94 @@ describe('Booking Core Service & Repository Tests', () => {
       ).rejects.toMatchObject({ statusCode: 409, code: 'BOOKING_STATUS_CONFLICT' });
     });
   });
+
+  describe('BookingService.complete', () => {
+    beforeEach(async () => {
+      await prisma.review.deleteMany();
+      await prisma.bookingStatusHistory.deleteMany();
+      await prisma.booking.deleteMany();
+    });
+
+    it('lets the assigned tutor complete exactly at endAt', async () => {
+      const endAt = new Date('2026-07-20T11:00:00.000Z');
+      const booking = await createActionBooking({ endAt });
+      const service = new BookingService(() => endAt);
+
+      const result = await service.complete(booking.id, { id: tutorId, role: 'TUTOR' });
+
+      expect(result.status).toBe('COMPLETED');
+      expect(result.completedAt).toEqual(endAt);
+      expect(result.cancelledAt).toBeNull();
+      expect(result.cancelledById).toBeNull();
+      expect(result.cancellationReason).toBeNull();
+      expect(result.statusHistory.at(-1)).toMatchObject({
+        fromStatus: 'CONFIRMED',
+        toStatus: 'COMPLETED',
+        actorUserId: tutorId,
+        actorRole: 'TUTOR',
+        reason: null,
+      });
+
+      const secondBooking = await createActionBooking();
+      const afterEnd = new BookingService(() => new Date('2026-07-20T11:00:00.001Z'));
+      await expect(
+        afterEnd.complete(secondBooking.id, { id: tutorId, role: 'TUTOR' })
+      ).resolves.toMatchObject({ status: 'COMPLETED' });
+    });
+
+    it('rejects completion one millisecond before endAt', async () => {
+      const booking = await createActionBooking();
+      const service = new BookingService(() => new Date('2026-07-20T10:59:59.999Z'));
+
+      await expect(
+        service.complete(booking.id, { id: tutorId, role: 'TUTOR' })
+      ).rejects.toMatchObject({ statusCode: 409, code: 'BOOKING_NOT_COMPLETABLE' });
+    });
+
+    it('rejects an unrelated tutor and a repeated completion', async () => {
+      const booking = await createActionBooking();
+      const service = new BookingService(() => new Date('2026-07-20T11:00:00.000Z'));
+
+      await expect(
+        service.complete(booking.id, { id: otherUserId, role: 'TUTOR' })
+      ).rejects.toMatchObject({ statusCode: 403, code: 'FORBIDDEN' });
+
+      await service.complete(booking.id, { id: tutorId, role: 'TUTOR' });
+      await expect(
+        service.complete(booking.id, { id: tutorId, role: 'TUTOR' })
+      ).rejects.toMatchObject({ statusCode: 409, code: 'BOOKING_NOT_COMPLETABLE' });
+    });
+
+    it('allows admin standard completion only at or after endAt', async () => {
+      const booking = await createActionBooking();
+      const early = new BookingService(() => new Date('2026-07-20T10:59:59.999Z'));
+      const onTime = new BookingService(() => new Date('2026-07-20T11:00:00.000Z'));
+
+      await expect(
+        early.complete(booking.id, { id: adminId, role: 'ADMIN' })
+      ).rejects.toMatchObject({ statusCode: 409, code: 'BOOKING_NOT_COMPLETABLE' });
+
+      const result = await onTime.complete(booking.id, { id: adminId, role: 'ADMIN' });
+      expect(result.status).toBe('COMPLETED');
+    });
+
+    it('returns actions only to actors that can invoke them', async () => {
+      const booking = await createActionBooking();
+      const beforeStart = new BookingService(() => new Date('2026-07-20T09:00:00.000Z'));
+      const afterEnd = new BookingService(() => new Date('2026-07-20T11:00:00.000Z'));
+
+      expect(
+        (await beforeStart.getDetail(booking.id, studentId, 'STUDENT')).allowedActions
+      ).toEqual(['CANCEL']);
+      expect(
+        (await beforeStart.getDetail(booking.id, adminId, 'ADMIN')).allowedActions
+      ).toEqual([]);
+      expect(
+        (await afterEnd.getDetail(booking.id, tutorId, 'TUTOR')).allowedActions
+      ).toEqual(['COMPLETE']);
+      expect(
+        (await afterEnd.getDetail(booking.id, adminId, 'ADMIN')).allowedActions
+      ).toEqual(['COMPLETE']);
+    });
+  });
 });
