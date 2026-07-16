@@ -296,4 +296,37 @@ describe('Administration and dashboard stats', () => {
       .set('Authorization', `Bearer ${studentToken}`);
     expect(forbidden.status).toBe(403);
   });
+
+  it('rejects a banned admin from every admin catalog and mutation route', async () => {
+    await prisma.user.update({
+      where: { id: adminId },
+      data: { status: 'BANNED' },
+    });
+    try {
+      const requests = [
+        request(app).get('/api/v1/admin/stats'),
+        request(app).get('/api/v1/admin/users'),
+        request(app)
+          .patch(`/api/v1/admin/users/${studentId}/status`)
+          .send({ status: 'BANNED', reason: 'Must not execute' }),
+        request(app).get('/api/v1/admin/tutors'),
+        request(app).get(`/api/v1/admin/tutors/${tutorProfileId}`),
+        request(app).get('/api/v1/admin/bookings'),
+      ];
+
+      for (const adminRequest of requests) {
+        const response = await adminRequest.set(
+          'Authorization',
+          `Bearer ${adminToken}`
+        );
+        expect(response.status).toBe(403);
+        expect(response.body.error.code).toBe('USER_BANNED');
+      }
+    } finally {
+      await prisma.user.update({
+        where: { id: adminId },
+        data: { status: 'ACTIVE' },
+      });
+    }
+  });
 });

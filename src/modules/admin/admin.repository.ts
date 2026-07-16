@@ -136,19 +136,54 @@ export class AdminRepository {
         skip: (options.page - 1) * options.pageSize,
         take: options.pageSize,
         orderBy: [{ startAt: 'desc' }, { id: 'desc' }],
-        include: {
+        select: {
+          id: true,
+          studentId: true,
+          tutorProfileId: true,
+          categoryId: true,
+          startAt: true,
+          endAt: true,
+          durationMinutes: true,
+          hourlyRateSnapshot: true,
+          quotedPrice: true,
+          currencyCode: true,
+          note: true,
+          status: true,
+          cancelledAt: true,
+          cancelledById: true,
+          cancellationReason: true,
+          completedAt: true,
+          createdAt: true,
+          updatedAt: true,
           student: {
             select: { id: true, name: true, email: true, status: true },
           },
           tutorProfile: {
-            include: {
+            select: {
+              id: true,
+              headline: true,
+              approvalStatus: true,
               user: {
                 select: { id: true, name: true, email: true, status: true },
               },
             },
           },
-          category: true,
-          review: true,
+          category: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+              isActive: true,
+            },
+          },
+          review: {
+            select: {
+              id: true,
+              rating: true,
+              comment: true,
+              createdAt: true,
+            },
+          },
         },
       }),
       prisma.booking.count({ where }),
