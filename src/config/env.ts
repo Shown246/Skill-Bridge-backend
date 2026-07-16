@@ -16,6 +16,9 @@ const trustProxySchema = z.preprocess((value) => {
   return Number(value);
 }, z.union([z.boolean(), z.number().int().nonnegative()]));
 
+const testRateLimitMax = 10_000;
+const isTestEnvironment = process.env.NODE_ENV === 'test';
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production', 'staging']).default('development'),
   PORT: z.coerce.number().int().positive().default(5000),
@@ -40,11 +43,11 @@ const envSchema = z.object({
   ADMIN_EMAIL: z.string().email().default('admin@example.com'),
   ADMIN_PASSWORD: z.string().min(8).default('replace-with-a-strong-password'),
   AUTH_RATE_LIMIT_WINDOW_MS: positiveInteger(15 * 60 * 1000),
-  AUTH_RATE_LIMIT_MAX: positiveInteger(10),
+  AUTH_RATE_LIMIT_MAX: positiveInteger(isTestEnvironment ? testRateLimitMax : 10),
   SENSITIVE_RATE_LIMIT_WINDOW_MS: positiveInteger(15 * 60 * 1000),
-  SENSITIVE_RATE_LIMIT_MAX: positiveInteger(20),
+  SENSITIVE_RATE_LIMIT_MAX: positiveInteger(isTestEnvironment ? testRateLimitMax : 20),
   GENERAL_RATE_LIMIT_WINDOW_MS: positiveInteger(15 * 60 * 1000),
-  GENERAL_RATE_LIMIT_MAX: positiveInteger(100),
+  GENERAL_RATE_LIMIT_MAX: positiveInteger(isTestEnvironment ? testRateLimitMax : 100),
   TRUST_PROXY: trustProxySchema,
 }).superRefine((data, ctx) => {
   if (data.NODE_ENV === 'production') {

@@ -5,6 +5,11 @@ import { env } from './config/env.js';
 import { prisma } from './config/db.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
 import { errorHandler } from './middleware/error.middleware.js';
+import {
+  authRateLimiter,
+  generalRateLimiter,
+  sensitiveRateLimiter,
+} from './middleware/rate-limiter.js';
 import { NotFoundError } from './shared/errors/app-error.js';
 import { logger } from './shared/logging/logger.js';
 
@@ -19,6 +24,7 @@ import reviewRoutes from './modules/reviews/review.routes.js';
 import adminRoutes from './modules/admin/admin.routes.js';
 
 const app = express();
+app.set('trust proxy', env.TRUST_PROXY);
 
 // 1. Request ID middleware
 app.use(requestIdMiddleware);
@@ -51,13 +57,15 @@ app.use((req, res, next) => {
 });
 
 // 5. Better Auth catch-all handler
+app.use(authRateLimiter);
 app.all('/api/auth/*', toNodeHandler(auth));
 
 // 6. JSON body parsing (applied after auth to not break auth raw body parsing if needed)
 app.use(express.json());
 
-// 7. [Future Placeholder] Rate Limiter
-// app.use(rateLimiter);
+// 7. Rate limiting
+app.use(sensitiveRateLimiter);
+app.use(generalRateLimiter);
 
 // 8. Routes
 // Health Check (Unversioned)
