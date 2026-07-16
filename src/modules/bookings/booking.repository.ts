@@ -51,17 +51,52 @@ export class BookingRepository {
     tutorProfileId: string,
     startAt: Date,
     endAt: Date,
-    tx: TransactionClient
+    tx: TransactionClient,
+    excludeBookingId?: string
   ) {
     const count = await tx.booking.count({
       where: {
         tutorProfileId,
         status: 'CONFIRMED',
+        ...(excludeBookingId ? { id: { not: excludeBookingId } } : {}),
         startAt: { lt: endAt },
         endAt: { gt: startAt },
       },
     });
     return count > 0;
+  }
+
+  async checkOverlapOutsideTransaction(
+    tutorProfileId: string,
+    startAt: Date,
+    endAt: Date,
+    excludeBookingId: string
+  ) {
+    const count = await prisma.booking.count({
+      where: {
+        tutorProfileId,
+        status: 'CONFIRMED',
+        id: { not: excludeBookingId },
+        startAt: { lt: endAt },
+        endAt: { gt: startAt },
+      },
+    });
+    return count > 0;
+  }
+
+  async isTutorEligibleForReconfirmation(tutorProfileId: string) {
+    const tutor = await prisma.tutorProfile.findUnique({
+      where: { id: tutorProfileId },
+      select: {
+        approvalStatus: true,
+        user: { select: { status: true } },
+      },
+    });
+    return Boolean(
+      tutor &&
+        tutor.approvalStatus === 'APPROVED' &&
+        tutor.user.status === 'ACTIVE'
+    );
   }
 
   async findTutorProfileIdByBookingId(bookingId: string) {

@@ -27,6 +27,19 @@ export class BookingService {
     });
   }
 
+  async overrideStatus(
+    bookingId: string,
+    actor: BookingActor,
+    targetStatus: BookingStatus,
+    reason: string
+  ) {
+    return this.transition(bookingId, actor, {
+      mode: 'ADMIN_OVERRIDE',
+      targetStatus,
+      reason,
+    });
+  }
+
   private async transition(
     bookingId: string,
     actor: BookingActor,
@@ -83,6 +96,53 @@ export class BookingService {
               'Booking is not eligible for completion.',
               'BOOKING_NOT_COMPLETABLE'
             );
+          }
+        }
+
+        if (command.mode === 'ADMIN_OVERRIDE') {
+          if (actor.role !== 'ADMIN') {
+            throw new ForbiddenError('Access denied.');
+          }
+          if (booking.status === command.targetStatus) {
+            throw new ConflictError(
+              'Booking already has the requested status.',
+              'BOOKING_STATUS_CONFLICT'
+            );
+          }
+          if (
+            booking.review &&
+            booking.status === 'COMPLETED' &&
+            command.targetStatus !== 'COMPLETED'
+          ) {
+            throw new ConflictError(
+              'A reviewed completed booking cannot change status.',
+              'BOOKING_STATUS_CONFLICT'
+            );
+          }
+          if (command.targetStatus === 'CONFIRMED') {
+            const tutorEligible =
+              booking.tutorProfile.user.status === 'ACTIVE' &&
+              booking.tutorProfile.approvalStatus === 'APPROVED';
+            if (!tutorEligible) {
+              throw new ConflictError(
+                'Tutor must be active and approved before reconfirmation.',
+                'TUTOR_NOT_APPROVED'
+              );
+            }
+
+            const hasOverlap = await bookingRepository.checkOverlap(
+              booking.tutorProfileId,
+              booking.startAt,
+              booking.endAt,
+              tx,
+              booking.id
+            );
+            if (hasOverlap) {
+              throw new ConflictError(
+                'Reconfirmed booking conflicts with another confirmed booking.',
+                'BOOKING_SLOT_CONFLICT'
+              );
+            }
           }
         }
 
@@ -222,10 +282,13 @@ export class BookingService {
     }
 
     const allowedActions = this.computeAllowedActions(booking, userId, role);
+    const allowedAdminTransitions =
+      role === 'ADMIN' ? await this.computeAllowedAdminTransitions(booking) : undefined;
 
     return {
       ...booking,
       allowedActions,
+      ...(allowedAdminTransitions ? { allowedAdminTransitions } : {}),
     };
   }
 
@@ -310,6 +373,37 @@ export class BookingService {
     }
 
     return actions;
+  }
+
+  private async computeAllowedAdminTransitions(
+    booking: Awaited<ReturnType<typeof bookingRepository.findById>>
+  ): Promise<BookingStatus[]> {
+    if (!booking) return [];
+    if (booking.status === 'COMPLETED' && booking.review) return [];
+
+    const transitions: BookingStatus[] = ['CONFIRMED', 'COMPLETED', 'CANCELLED'].filter(
+      (status): status is BookingStatus => status !== booking.status
+    );
+
+    if (transitions.includes('CONFIRMED')) {
+      const tutorEligible = await bookingRepository.isTutorEligibleForReconfirmation(
+        booking.tutorProfileId
+      );
+      const hasOverlap = tutorEligible
+        ? await bookingRepository.checkOverlapOutsideTransaction(
+            booking.tutorProfileId,
+            booking.startAt,
+            booking.endAt,
+            booking.id
+          )
+        : true;
+
+      if (hasOverlap) {
+        return transitions.filter((status) => status !== 'CONFIRMED');
+      }
+    }
+
+    return transitions;
   }
 }
 
