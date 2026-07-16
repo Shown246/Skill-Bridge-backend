@@ -311,6 +311,9 @@ describe('Administration and dashboard stats', () => {
           .send({ status: 'BANNED', reason: 'Must not execute' }),
         request(app).get('/api/v1/admin/tutors'),
         request(app).get(`/api/v1/admin/tutors/${tutorProfileId}`),
+        request(app)
+          .patch(`/api/v1/admin/tutors/${tutorProfileId}/approval`)
+          .send({ status: 'REJECTED', reason: 'Must not execute' }),
         request(app).get('/api/v1/admin/bookings'),
       ];
 
