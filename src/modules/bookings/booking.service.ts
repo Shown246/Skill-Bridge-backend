@@ -1,6 +1,6 @@
 import { prisma } from '../../config/db.js';
 import { bookingRepository } from './booking.repository.js';
-import { AppError, NotFoundError } from '../../shared/errors/app-error.js';
+import { AppError, NotFoundError, ConflictError, ForbiddenError } from '../../shared/errors/app-error.js';
 import { env } from '../../config/env.js';
 
 export class BookingService {
@@ -36,6 +36,14 @@ export class BookingService {
     return prisma.$transaction(async (tx) => {
       // 1. Lock tutor row
       await bookingRepository.lockTutorProfile(data.tutorId, tx);
+
+      // Validate student status inside the transaction
+      const student = await tx.user.findUnique({
+        where: { id: studentId },
+      });
+      if (!student || student.role !== 'STUDENT' || student.status !== 'ACTIVE') {
+        throw new AppError(403, 'INACTIVE_STUDENT', 'Authenticated user must be an active student.');
+      }
 
       // 2. Validate tutor is active and approved
       const tutor = await tx.tutorProfile.findUnique({
@@ -73,7 +81,7 @@ export class BookingService {
       // 5. Overlap check
       const hasOverlap = await bookingRepository.checkOverlap(tutor.id, startAt, endAt, tx);
       if (hasOverlap) {
-        throw new AppError(409, 'BOOKING_SLOT_CONFLICT', 'Requested booking slot conflicts with an existing booking.');
+        throw new ConflictError('Requested booking slot conflicts with an existing booking.', 'BOOKING_SLOT_CONFLICT');
       }
 
       // 6. Calculate price
@@ -106,7 +114,7 @@ export class BookingService {
     const isAdmin = role === 'ADMIN';
 
     if (!isStudent && !isTutor && !isAdmin) {
-      throw new AppError(403, 'FORBIDDEN', 'Access denied.');
+      throw new ForbiddenError('Access denied.');
     }
 
     const allowedActions = this.computeAllowedActions(booking, userId, role);

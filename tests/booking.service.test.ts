@@ -290,6 +290,31 @@ describe('Booking Core Service & Repository Tests', () => {
       ).rejects.toThrow(new AppError(400, 'OUT_OF_AVAILABILITY', 'Requested time is outside the tutor availability.'));
     });
 
+    it('should throw INACTIVE_STUDENT if the student is not active or has an incorrect role', async () => {
+      const inactiveStudent = await prisma.user.create({
+        data: {
+          id: 'user-inactive-student',
+          name: 'Inactive Student',
+          email: 'inactive-student@example.com',
+          emailVerified: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          role: 'STUDENT',
+          status: 'BANNED',
+        },
+      });
+
+      await expect(
+        bookingService.create(inactiveStudent.id, {
+          tutorId: tutorProfileId,
+          categoryId,
+          startAt: '2026-07-20T10:00:00.000Z',
+          durationMinutes: 60,
+        })
+      ).rejects.toThrow(new AppError(403, 'INACTIVE_STUDENT', 'Authenticated user must be an active student.'));
+    });
+
+
     it('should successfully create a booking, calculate correct quoted price, snapshot rate and create booking history', async () => {
       const startAtStr = '2026-07-20T10:00:00.000Z'; // Monday 10:00 UTC (minute 600, duration 60 -> ends 660, inside 540-1020 availability)
       const booking = await bookingService.create(studentId, {
