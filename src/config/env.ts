@@ -4,6 +4,18 @@ import { z } from 'zod';
 // Load environment variables from .env
 dotenv.config();
 
+const positiveInteger = (defaultValue: number) =>
+  z.preprocess(
+    (value) => value === undefined ? defaultValue : Number(value),
+    z.number().int().positive()
+  );
+
+const trustProxySchema = z.preprocess((value) => {
+  if (value === undefined || value === 'false') return false;
+  if (value === 'true') return true;
+  return Number(value);
+}, z.union([z.boolean(), z.number().int().nonnegative()]));
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production', 'staging']).default('development'),
   PORT: z.coerce.number().int().positive().default(5000),
@@ -27,6 +39,13 @@ const envSchema = z.object({
   ADMIN_NAME: z.string().default('SkillBridge Admin'),
   ADMIN_EMAIL: z.string().email().default('admin@example.com'),
   ADMIN_PASSWORD: z.string().min(8).default('replace-with-a-strong-password'),
+  AUTH_RATE_LIMIT_WINDOW_MS: positiveInteger(15 * 60 * 1000),
+  AUTH_RATE_LIMIT_MAX: positiveInteger(10),
+  SENSITIVE_RATE_LIMIT_WINDOW_MS: positiveInteger(15 * 60 * 1000),
+  SENSITIVE_RATE_LIMIT_MAX: positiveInteger(20),
+  GENERAL_RATE_LIMIT_WINDOW_MS: positiveInteger(15 * 60 * 1000),
+  GENERAL_RATE_LIMIT_MAX: positiveInteger(100),
+  TRUST_PROXY: trustProxySchema,
 }).superRefine((data, ctx) => {
   if (data.NODE_ENV === 'production') {
     if (data.ADMIN_PASSWORD === 'replace-with-a-strong-password') {
