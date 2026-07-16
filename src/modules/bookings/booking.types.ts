@@ -22,4 +22,5 @@ export type BookingTransitionWrite = {
   actor: BookingActor;
   reason?: string;
   now: Date;
+  historyCreatedAt: Date;
 };

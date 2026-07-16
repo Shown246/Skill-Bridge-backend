@@ -4,6 +4,17 @@ import { prisma } from '../src/config/db.js';
 
 jest.setTimeout(60000);
 
+function futureMondayAt(hour: number, minute = 0) {
+  const now = new Date();
+  const futureMonday = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  );
+  const daysUntilNextMonday = (8 - futureMonday.getUTCDay()) % 7 || 7;
+  futureMonday.setUTCDate(futureMonday.getUTCDate() + daysUntilNextMonday + 7);
+  futureMonday.setUTCHours(hour, minute, 0, 0);
+  return futureMonday;
+}
+
 // Mock jose remote JWKS fetching to load key directly from the DB
 jest.unstable_mockModule('jose', () => {
   const actualJose = jest.requireActual('jose') as any;
@@ -146,14 +157,13 @@ describe('Booking Core API', () => {
 
   describe('POST /api/v1/bookings', () => {
     it('should create booking successfully', async () => {
-      // 2026-07-20 is Monday
       const res = await request(app)
         .post('/api/v1/bookings')
         .set('Authorization', `Bearer ${studentToken}`)
         .send({
           tutorId,
           categoryId,
-          startAt: '2026-07-20T09:00:00.000Z',
+          startAt: futureMondayAt(9).toISOString(),
           durationMinutes: 60,
         });
 
@@ -183,7 +193,7 @@ describe('Booking Core API', () => {
           .send({
             tutorId,
             categoryId,
-            startAt: '2026-07-20T09:00:00.000Z',
+            startAt: futureMondayAt(9).toISOString(),
             durationMinutes: 60,
           });
 
@@ -202,13 +212,13 @@ describe('Booking Core API', () => {
       await request(app)
         .post('/api/v1/bookings')
         .set('Authorization', `Bearer ${studentToken}`)
-        .send({ tutorId, categoryId, startAt: '2026-07-20T09:00:00.000Z', durationMinutes: 60 });
+        .send({ tutorId, categoryId, startAt: futureMondayAt(9).toISOString(), durationMinutes: 60 });
 
       // Attempt overlap booking
       const res = await request(app)
         .post('/api/v1/bookings')
         .set('Authorization', `Bearer ${studentToken}`)
-        .send({ tutorId, categoryId, startAt: '2026-07-20T09:30:00.000Z', durationMinutes: 60 });
+        .send({ tutorId, categoryId, startAt: futureMondayAt(9, 30).toISOString(), durationMinutes: 60 });
 
       expect(res.status).toBe(409);
       expect(res.body.error.code).toBe('BOOKING_SLOT_CONFLICT');
@@ -220,7 +230,7 @@ describe('Booking Core API', () => {
         request(app)
           .post('/api/v1/bookings')
           .set('Authorization', `Bearer ${studentToken}`)
-          .send({ tutorId, categoryId, startAt: '2026-07-20T09:00:00.000Z', durationMinutes: 60 })
+          .send({ tutorId, categoryId, startAt: futureMondayAt(9).toISOString(), durationMinutes: 60 })
       );
 
       const responses = await Promise.all(reqs);
@@ -242,7 +252,7 @@ describe('Booking Core API', () => {
         .send({
           tutorId,
           categoryId,
-          startAt: '2026-07-20T08:00:00.000Z', // Availability starts at 09:00
+          startAt: futureMondayAt(8).toISOString(), // Availability starts at 09:00
           durationMinutes: 60,
         });
 
@@ -261,7 +271,7 @@ describe('Booking Core API', () => {
         .send({
           tutorId,
           categoryId,
-          startAt: '2026-07-20T09:00:00.000Z',
+          startAt: futureMondayAt(9).toISOString(),
           durationMinutes: 60,
         });
       bookingId = res.body.data.id;
@@ -316,12 +326,6 @@ describe('Booking Core API', () => {
   });
 
   describe('PATCH booking actions', () => {
-    beforeEach(async () => {
-      await prisma.review.deleteMany();
-      await prisma.bookingStatusHistory.deleteMany();
-      await prisma.booking.deleteMany();
-    });
-
     it('lets the student cancel their future booking and returns embedded history', async () => {
       const booking = await createDirectBooking();
       await prisma.bookingStatusHistory.create({
@@ -432,14 +436,15 @@ describe('Booking Core API', () => {
     });
 
     it('serializes admin reconfirmation against booking creation', async () => {
-      const startAt = '2026-07-20T09:00:00.000Z';
+      const startAt = futureMondayAt(9);
+      const endAt = futureMondayAt(10);
       const cancelled = await prisma.booking.create({
         data: {
           studentId: studentUserId,
           tutorProfileId: tutorId,
           categoryId,
-          startAt: new Date(startAt),
-          endAt: new Date('2026-07-20T10:00:00.000Z'),
+          startAt,
+          endAt,
           durationMinutes: 60,
           hourlyRateSnapshot: 40,
           quotedPrice: 40,
@@ -455,7 +460,7 @@ describe('Booking Core API', () => {
         request(app)
           .post('/api/v1/bookings')
           .set('Authorization', `Bearer ${studentToken}`)
-          .send({ tutorId, categoryId, startAt, durationMinutes: 60 }),
+          .send({ tutorId, categoryId, startAt: startAt.toISOString(), durationMinutes: 60 }),
       ]);
 
       expect([
@@ -469,8 +474,8 @@ describe('Booking Core API', () => {
           where: {
             tutorProfileId: tutorId,
             status: 'CONFIRMED',
-            startAt: { lt: new Date('2026-07-20T10:00:00.000Z') },
-            endAt: { gt: new Date(startAt) },
+            startAt: { lt: endAt },
+            endAt: { gt: startAt },
           },
         })
       ).toBe(1);
@@ -486,7 +491,7 @@ describe('Booking Core API', () => {
         .send({
           tutorId,
           categoryId,
-          startAt: '2026-07-20T09:00:00.000Z',
+          startAt: futureMondayAt(9).toISOString(),
           durationMinutes: 60,
         });
 
@@ -497,7 +502,7 @@ describe('Booking Core API', () => {
         .send({
           tutorId,
           categoryId,
-          startAt: '2026-07-20T10:30:00.000Z',
+          startAt: futureMondayAt(10, 30).toISOString(),
           durationMinutes: 60,
         });
     });
@@ -546,13 +551,13 @@ describe('Booking Core API', () => {
         .get('/api/v1/bookings')
         .set('Authorization', `Bearer ${studentToken}`)
         .query({
-          from: '2026-07-20T08:30:00.000Z',
-          to: '2026-07-20T10:00:00.000Z',
+          from: futureMondayAt(8, 30).toISOString(),
+          to: futureMondayAt(10).toISOString(),
         });
 
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
-      expect(res.body.data[0].startAt).toBe('2026-07-20T09:00:00.000Z');
+      expect(res.body.data[0].startAt).toBe(futureMondayAt(9).toISOString());
     });
 
     it('should filter bookings by status', async () => {

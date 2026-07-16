@@ -146,6 +146,15 @@ export class BookingService {
           }
         }
 
+        const latestHistoryTimestamp =
+          await bookingRepository.findLatestHistoryTimestamp(bookingId, tx);
+        const historyCreatedAt = new Date(
+          Math.max(
+            transitionNow.getTime(),
+            latestHistoryTimestamp?.getTime() ?? transitionNow.getTime()
+          ) + 1
+        );
+
         await bookingRepository.transitionBooking(
           {
             bookingId,
@@ -154,6 +163,7 @@ export class BookingService {
             actor,
             reason: command.reason,
             now: transitionNow,
+            historyCreatedAt,
           },
           tx
         );

@@ -122,6 +122,15 @@ export class BookingRepository {
     });
   }
 
+  async findLatestHistoryTimestamp(bookingId: string, tx: TransactionClient) {
+    const latestHistory = await tx.bookingStatusHistory.findFirst({
+      where: { bookingId },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      select: { createdAt: true },
+    });
+    return latestHistory?.createdAt ?? null;
+  }
+
   async transitionBooking(write: BookingTransitionWrite, tx: TransactionClient) {
     const cancellationData =
       write.toStatus === 'CANCELLED'
@@ -154,7 +163,7 @@ export class BookingRepository {
         actorUserId: write.actor.id,
         actorRole: write.actor.role as UserRole,
         reason: write.reason ?? null,
-        createdAt: write.now,
+        createdAt: write.historyCreatedAt,
       },
     });
 

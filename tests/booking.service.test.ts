@@ -1,7 +1,6 @@
 import { jest, describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import { prisma } from '../src/config/db.js';
 import { BookingService, bookingService } from '../src/modules/bookings/booking.service.js';
-import { bookingRepository } from '../src/modules/bookings/booking.repository.js';
 import {
   adminBookingStatusSchema,
   bookingIdParamsSchema,
@@ -12,6 +11,17 @@ import {
 import { AppError, NotFoundError } from '../src/shared/errors/app-error.js';
 
 jest.setTimeout(60000);
+
+function futureMondayAt(hour: number, minute = 0) {
+  const now = new Date();
+  const futureMonday = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  );
+  const daysUntilNextMonday = (8 - futureMonday.getUTCDay()) % 7 || 7;
+  futureMonday.setUTCDate(futureMonday.getUTCDate() + daysUntilNextMonday + 7);
+  futureMonday.setUTCHours(hour, minute, 0, 0);
+  return futureMonday;
+}
 
 describe('Booking Core Service & Repository Tests', () => {
   let studentId: string;
@@ -280,7 +290,7 @@ describe('Booking Core Service & Repository Tests', () => {
         bookingService.create(studentId, {
           tutorId: tutorProfileId,
           categoryId,
-          startAt: '2026-07-20T10:00:00.000Z',
+          startAt: futureMondayAt(10).toISOString(),
           durationMinutes: 45, // Defaults in env are 30, 60, 90, 120
         })
       ).rejects.toThrow(new AppError(400, 'INVALID_DURATION', 'Requested booking duration is not supported.'));
@@ -291,7 +301,7 @@ describe('Booking Core Service & Repository Tests', () => {
         bookingService.create(studentId, {
           tutorId: tutorProfileId,
           categoryId,
-          startAt: '2026-07-20T10:15:00.000Z',
+          startAt: futureMondayAt(10, 15).toISOString(),
           durationMinutes: 60,
         })
       ).rejects.toThrow(new AppError(400, 'INVALID_ALIGNMENT', 'Booking start time must align to 30-minute boundaries.'));
@@ -313,7 +323,7 @@ describe('Booking Core Service & Repository Tests', () => {
         bookingService.create(studentId, {
           tutorId: tutorProfileId,
           categoryId,
-          startAt: '2026-07-20T23:30:00.000Z', // 60 minutes wraps to 00:30 next day
+          startAt: futureMondayAt(23, 30).toISOString(), // 60 minutes wraps to 00:30 next day
           durationMinutes: 60,
         })
       ).rejects.toThrow(new AppError(400, 'MIDNIGHT_CROSSING', 'Booking cannot wrap across UTC midnight.'));
@@ -325,7 +335,7 @@ describe('Booking Core Service & Repository Tests', () => {
         bookingService.create(studentId, {
           tutorId: nonExistentUuid,
           categoryId,
-          startAt: '2026-07-20T10:00:00.000Z',
+          startAt: futureMondayAt(10).toISOString(),
           durationMinutes: 60,
         })
       ).rejects.toThrow(new NotFoundError('Tutor profile not found or inactive.'));
@@ -345,7 +355,7 @@ describe('Booking Core Service & Repository Tests', () => {
         bookingService.create(studentId, {
           tutorId: tutorProfileId,
           categoryId: unassignedCategory.id,
-          startAt: '2026-07-20T10:00:00.000Z',
+          startAt: futureMondayAt(10).toISOString(),
           durationMinutes: 60,
         })
       ).rejects.toThrow(new NotFoundError('Category not found or inactive for this tutor.'));
@@ -356,7 +366,7 @@ describe('Booking Core Service & Repository Tests', () => {
         bookingService.create(studentId, {
           tutorId: tutorProfileId,
           categoryId,
-          startAt: '2026-07-20T08:00:00.000Z', // 8:00 UTC is minute 480. Tutor starts at 540 (9:00 UTC)
+          startAt: futureMondayAt(8).toISOString(), // 8:00 UTC is minute 480. Tutor starts at 540 (9:00 UTC)
           durationMinutes: 60,
         })
       ).rejects.toThrow(new AppError(400, 'OUT_OF_AVAILABILITY', 'Requested time is outside the tutor availability.'));
@@ -380,7 +390,7 @@ describe('Booking Core Service & Repository Tests', () => {
         bookingService.create(inactiveStudent.id, {
           tutorId: tutorProfileId,
           categoryId,
-          startAt: '2026-07-20T10:00:00.000Z',
+          startAt: futureMondayAt(10).toISOString(),
           durationMinutes: 60,
         })
       ).rejects.toThrow(new AppError(403, 'INACTIVE_STUDENT', 'Authenticated user must be an active student.'));
@@ -388,7 +398,7 @@ describe('Booking Core Service & Repository Tests', () => {
 
 
     it('should successfully create a booking, calculate correct quoted price, snapshot rate and create booking history', async () => {
-      const startAtStr = '2026-07-20T10:00:00.000Z'; // Monday 10:00 UTC (minute 600, duration 60 -> ends 660, inside 540-1020 availability)
+      const startAtStr = futureMondayAt(10).toISOString();
       const booking = await bookingService.create(studentId, {
         tutorId: tutorProfileId,
         categoryId,
@@ -423,7 +433,7 @@ describe('Booking Core Service & Repository Tests', () => {
         bookingService.create(studentId, {
           tutorId: tutorProfileId,
           categoryId,
-          startAt: '2026-07-20T10:30:00.000Z', // 10:30 to 11:30 overlaps with 10:00 to 11:00
+          startAt: futureMondayAt(10, 30).toISOString(), // 10:30 to 11:30 overlaps with 10:00 to 11:00
           durationMinutes: 60,
         })
       ).rejects.toThrow(new AppError(409, 'BOOKING_SLOT_CONFLICT', 'Requested booking slot conflicts with an existing booking.'));
@@ -543,17 +553,21 @@ describe('Booking Core Service & Repository Tests', () => {
     });
 
     it('should return bookings filtered by status and dates', async () => {
+      const rangeStart = futureMondayAt(0);
+      const rangeEnd = new Date(rangeStart.getTime() + 24 * 60 * 60 * 1000);
       const listRes = await bookingService.list(studentId, 'STUDENT', {
         status: 'CONFIRMED',
-        from: '2026-07-20T00:00:00.000Z',
-        to: '2026-07-21T00:00:00.000Z',
+        from: rangeStart.toISOString(),
+        to: rangeEnd.toISOString(),
         page: 1,
         pageSize: 10,
       });
 
       expect(listRes.bookings.length).toBe(1);
       expect(listRes.bookings[0].status).toBe('CONFIRMED');
-      expect(new Date(listRes.bookings[0].startAt).getTime()).toBeGreaterThanOrEqual(new Date('2026-07-20T00:00:00.000Z').getTime());
+      expect(new Date(listRes.bookings[0].startAt).getTime()).toBeGreaterThanOrEqual(
+        rangeStart.getTime()
+      );
     });
   });
 
@@ -1186,6 +1200,44 @@ describe('Booking Core Service & Repository Tests', () => {
       const detail = await service.getDetail(booking.id, studentId, 'STUDENT');
 
       expect(detail).not.toHaveProperty('allowedAdminTransitions');
+    });
+
+    it('keeps creation and sequential same-clock transitions in strict semantic order', async () => {
+      const now = new Date('2026-07-19T10:00:00.000Z');
+      const booking = await createActionBooking();
+      await prisma.bookingStatusHistory.create({
+        data: {
+          bookingId: booking.id,
+          fromStatus: null,
+          toStatus: 'CONFIRMED',
+          actorUserId: studentId,
+          actorRole: 'STUDENT',
+          createdAt: now,
+        },
+      });
+      const service = new BookingService(() => now);
+
+      await service.overrideStatus(
+        booking.id,
+        { id: adminId, role: 'ADMIN' },
+        'COMPLETED',
+        'Mark complete'
+      );
+      const detail = await service.overrideStatus(
+        booking.id,
+        { id: adminId, role: 'ADMIN' },
+        'CANCELLED',
+        'Correct to cancelled'
+      );
+
+      expect(detail.statusHistory.map((entry) => entry.toStatus)).toEqual([
+        'CONFIRMED',
+        'COMPLETED',
+        'CANCELLED',
+      ]);
+      const timestamps = detail.statusHistory.map((entry) => entry.createdAt.getTime());
+      expect(timestamps[0]).toBeLessThan(timestamps[1]);
+      expect(timestamps[1]).toBeLessThan(timestamps[2]);
     });
 
     it('orders status history deterministically when timestamps are equal', async () => {
