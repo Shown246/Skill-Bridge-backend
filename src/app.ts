@@ -45,12 +45,13 @@ app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
     const latency = Date.now() - start;
-    logger.info(`${req.method} ${req.originalUrl} ${res.statusCode} - ${latency}ms`, {
+    logger.info(`${req.method} ${req.path} ${res.statusCode} - ${latency}ms`, {
       method: req.method,
-      path: req.originalUrl,
+      path: req.path,
       status: res.statusCode,
       latencyMs: latency,
       requestId: req.requestId,
+      ...(req.user?.id ? { actorId: req.user.id } : {}),
     });
   });
   next();

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from '@jest/globals';
+import { afterAll, beforeAll, describe, expect, it, jest } from '@jest/globals';
 import { spawnSync } from 'node:child_process';
 import request from 'supertest';
 
@@ -15,14 +15,17 @@ const hardeningEnv = {
 const originalEnv = Object.fromEntries(
   Object.keys(hardeningEnv).map((key) => [key, process.env[key]])
 );
+const originalDebug = process.env.DEBUG;
 
 describe('hardening configuration', () => {
   let env: typeof import('../src/config/env.js').env;
   let app: typeof import('../src/app.js').app;
+  let logger: typeof import('../src/shared/logging/logger.js').logger;
 
   beforeAll(async () => {
     Object.assign(process.env, hardeningEnv);
     ({ env } = await import('../src/config/env.js'));
+    ({ logger } = await import('../src/shared/logging/logger.js'));
     ({ app } = await import('../src/app.js'));
   });
 
@@ -33,6 +36,11 @@ describe('hardening configuration', () => {
       } else {
         process.env[key] = value;
       }
+    }
+    if (originalDebug === undefined) {
+      delete process.env.DEBUG;
+    } else {
+      process.env.DEBUG = originalDebug;
     }
   });
 
@@ -128,5 +136,69 @@ describe('hardening configuration', () => {
     expect(blocked.status).toBe(429);
     expect(blocked.body.error.code).toBe('RATE_LIMITED');
     expect(health.status).toBe(200);
+  });
+
+  it('redacts nested credentials and sensitive custom error properties', () => {
+    process.env.DEBUG = '1';
+    const infoSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const customError = Object.assign(new Error('Credential audit failed'), {
+      refreshToken: 'error-refresh-token',
+      sessionId: 'error-session-id',
+    });
+
+    logger.info('credential audit', {
+      password: 'plain-password',
+      nested: {
+        accessToken: 'access-token-value',
+        Authorization: 'Bearer bearer-value',
+        cookie: 'session=cookie-value',
+        apiKey: 'api-key-value',
+        sessionId: 'context-session-id',
+      },
+    });
+    logger.error('credential error audit', customError);
+
+    const infoOutput = String(infoSpy.mock.calls[0]?.[0]);
+    const errorOutput = String(errorSpy.mock.calls[0]?.[0]);
+    const combinedOutput = `${infoOutput}\n${errorOutput}`;
+    const errorEntry = JSON.parse(errorOutput) as {
+      error: Record<string, unknown>;
+    };
+
+    for (const secret of [
+      'plain-password',
+      'access-token-value',
+      'bearer-value',
+      'cookie-value',
+      'api-key-value',
+      'context-session-id',
+      'error-refresh-token',
+      'error-session-id',
+    ]) {
+      expect(combinedOutput).not.toContain(secret);
+    }
+    expect(errorEntry.error.refreshToken).toBe('[REDACTED]');
+    expect(errorEntry.error.sessionId).toBe('[REDACTED]');
+
+    infoSpy.mockRestore();
+    errorSpy.mockRestore();
+  });
+
+  it('logs request paths without raw query credentials', async () => {
+    process.env.DEBUG = '1';
+    const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    await request(app).get('/health?token=query-secret');
+
+    const requestLog = logSpy.mock.calls
+      .map(([entry]) => String(entry))
+      .find((entry) => entry.includes('"method":"GET"'));
+
+    expect(requestLog).toBeDefined();
+    expect(requestLog).not.toContain('query-secret');
+    expect(JSON.parse(requestLog!).context.path).toBe('/health');
+
+    logSpy.mockRestore();
   });
 });

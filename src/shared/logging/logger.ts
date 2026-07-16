@@ -1,35 +1,51 @@
 import { env } from '../../config/env.js';
 
-const REDACT_KEYS = ['password', 'token', 'secret', 'authorization', 'cookie', 'jwt', 'apikey'];
+const SENSITIVE_KEY_PARTS = [
+  'password',
+  'token',
+  'secret',
+  'authorization',
+  'cookie',
+  'session',
+  'jwt',
+  'apikey',
+];
 
-function redact(obj: any, visited = new WeakSet()): any {
-  if (obj === null || obj === undefined) return obj;
-  if (obj instanceof Error) {
-    return {
-      message: obj.message,
-      stack: obj.stack,
-    };
+function isSensitiveKey(key: string): boolean {
+  const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return SENSITIVE_KEY_PARTS.some((part) => normalizedKey.includes(part));
+}
+
+function redact(value: unknown, visited = new WeakSet<object>()): unknown {
+  if (value === null || value === undefined) return value;
+  if (typeof value !== 'object') return value;
+  if (value instanceof Date || value instanceof RegExp) return value;
+  if (visited.has(value)) return '[Circular]';
+  visited.add(value);
+
+  if (Array.isArray(value)) {
+    return value.map((item) => redact(item, visited));
   }
-  if (typeof obj !== 'object') return obj;
-  if (obj instanceof Date || obj instanceof RegExp) return obj;
-  if (visited.has(obj)) return '[Circular]';
-  visited.add(obj);
 
-  if (Array.isArray(obj)) return obj.map((item) => redact(item, visited));
+  const redacted: Record<string, unknown> = {};
+  if (value instanceof Error) {
+    redacted.name = value.name;
+    redacted.message = value.message;
+    redacted.stack = value.stack;
+  }
 
-  const redacted: Record<string, any> = {};
-  for (const key of Object.keys(obj)) {
-    if (REDACT_KEYS.some((k) => key.toLowerCase().includes(k.toLowerCase()))) {
+  for (const [key, nestedValue] of Object.entries(value)) {
+    if (isSensitiveKey(key)) {
       redacted[key] = '[REDACTED]';
     } else {
-      redacted[key] = redact(obj[key], visited);
+      redacted[key] = redact(nestedValue, visited);
     }
   }
   return redacted;
 }
 
 export const logger = {
-  info(message: string, context?: Record<string, any>) {
+  info(message: string, context?: Record<string, unknown>) {
     const logEntry = {
       timestamp: new Date().toISOString(),
       level: 'INFO',
@@ -40,7 +56,7 @@ export const logger = {
     console.log(JSON.stringify(logEntry));
   },
 
-  warn(message: string, context?: Record<string, any>) {
+  warn(message: string, context?: Record<string, unknown>) {
     const logEntry = {
       timestamp: new Date().toISOString(),
       level: 'WARN',
@@ -51,25 +67,19 @@ export const logger = {
     console.warn(JSON.stringify(logEntry));
   },
 
-  error(message: string, error?: Error | unknown, context?: Record<string, any>) {
-    const errorObj = error instanceof Error ? {
-      name: error.name,
-      message: error.message,
-      stack: error.stack,
-    } : error;
-
+  error(message: string, error?: unknown, context?: Record<string, unknown>) {
     const logEntry = {
       timestamp: new Date().toISOString(),
       level: 'ERROR',
       message,
-      ...(errorObj ? { error: redact(errorObj) } : {}),
+      ...(error ? { error: redact(error) } : {}),
       ...(context ? { context: redact(context) } : {}),
     };
     if (env.NODE_ENV === 'test' && !process.env.DEBUG) return;
     console.error(JSON.stringify(logEntry));
   },
 
-  debug(message: string, context?: Record<string, any>) {
+  debug(message: string, context?: Record<string, unknown>) {
     if (env.NODE_ENV === 'production') return;
     const logEntry = {
       timestamp: new Date().toISOString(),
