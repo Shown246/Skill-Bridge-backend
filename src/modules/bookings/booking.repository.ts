@@ -192,7 +192,7 @@ export class BookingRepository {
           include: { user: { select: { id: true, name: true, email: true } } },
         },
         category: true,
-        statusHistory: { orderBy: { createdAt: 'asc' } },
+        statusHistory: { orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] },
         review: true,
       },
     });

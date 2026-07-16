@@ -860,7 +860,55 @@ describe('Booking Core Service & Repository Tests', () => {
       expect(await prisma.bookingStatusHistory.count({ where: { bookingId: booking.id } })).toBe(0);
     });
 
-    it('clears incompatible metadata for every admin target status', async () => {
+    it('clears cancellation metadata when an admin reconfirms a cancelled booking', async () => {
+      const cancelledAt = new Date('2026-07-19T10:00:00.000Z');
+      const now = new Date('2026-07-21T12:00:00.000Z');
+      const reason = 'Restore booking';
+      const booking = await prisma.booking.create({
+        data: {
+          studentId,
+          tutorProfileId,
+          categoryId,
+          startAt: new Date('2026-07-20T10:00:00.000Z'),
+          endAt: new Date('2026-07-20T11:00:00.000Z'),
+          durationMinutes: 60,
+          hourlyRateSnapshot: 50,
+          quotedPrice: 50,
+          status: 'CANCELLED',
+          cancelledAt,
+          cancelledById: studentId,
+          cancellationReason: 'Old reason',
+          completedAt: null,
+        },
+      });
+      const service = new BookingService(() => now);
+
+      const result = await service.overrideStatus(
+        booking.id,
+        { id: adminId, role: 'ADMIN' },
+        'CONFIRMED',
+        reason
+      );
+
+      expect(result).toMatchObject({
+        status: 'CONFIRMED',
+        cancelledAt: null,
+        cancelledById: null,
+        cancellationReason: null,
+        completedAt: null,
+      });
+      expect(result.statusHistory.at(-1)).toMatchObject({
+        fromStatus: 'CANCELLED',
+        toStatus: 'CONFIRMED',
+        actorUserId: adminId,
+        actorRole: 'ADMIN',
+        reason,
+      });
+    });
+
+    it('sets completion metadata and clears cancellation metadata for admin completion', async () => {
+      const now = new Date('2026-07-21T12:01:00.000Z');
+      const reason = 'Verified completed session';
       const booking = await prisma.booking.create({
         data: {
           studentId,
@@ -875,45 +923,102 @@ describe('Booking Core Service & Repository Tests', () => {
           cancelledAt: new Date('2026-07-19T10:00:00.000Z'),
           cancelledById: studentId,
           cancellationReason: 'Old reason',
+          completedAt: null,
         },
       });
-      const service = new BookingService(() => new Date('2026-07-21T12:00:00.000Z'));
+      const service = new BookingService(() => now);
 
-      const confirmed = await service.overrideStatus(
+      const result = await service.overrideStatus(
         booking.id,
         { id: adminId, role: 'ADMIN' },
-        'CONFIRMED',
-        'Restore booking'
+        'COMPLETED',
+        reason
       );
-      expect(confirmed).toMatchObject({
-        status: 'CONFIRMED',
+
+      expect(result).toMatchObject({
+        status: 'COMPLETED',
         cancelledAt: null,
         cancelledById: null,
         cancellationReason: null,
-        completedAt: null,
+        completedAt: now,
       });
+      expect(result.statusHistory.at(-1)).toMatchObject({
+        fromStatus: 'CANCELLED',
+        toStatus: 'COMPLETED',
+        actorUserId: adminId,
+        actorRole: 'ADMIN',
+        reason,
+      });
+    });
 
-      const cancelled = await service.overrideStatus(
+    it('sets cancellation metadata and clears completion metadata for admin cancellation', async () => {
+      const now = new Date('2026-07-21T12:02:00.000Z');
+      const reason = 'Administrative cancellation';
+      const booking = await prisma.booking.create({
+        data: {
+          studentId,
+          tutorProfileId,
+          categoryId,
+          startAt: new Date('2026-07-20T10:00:00.000Z'),
+          endAt: new Date('2026-07-20T11:00:00.000Z'),
+          durationMinutes: 60,
+          hourlyRateSnapshot: 50,
+          quotedPrice: 50,
+          status: 'COMPLETED',
+          cancelledAt: null,
+          cancelledById: null,
+          cancellationReason: null,
+          completedAt: new Date('2026-07-20T11:00:00.000Z'),
+        },
+      });
+      const service = new BookingService(() => now);
+
+      const result = await service.overrideStatus(
         booking.id,
         { id: adminId, role: 'ADMIN' },
         'CANCELLED',
-        'Cancel correction'
+        reason
       );
-      expect(cancelled.status).toBe('CANCELLED');
-      expect(cancelled.completedAt).toBeNull();
-      expect(
-        cancelled.statusHistory.slice(-2).map((entry) => [entry.fromStatus, entry.toStatus])
-      ).toEqual([
-        ['CANCELLED', 'CONFIRMED'],
-        ['CONFIRMED', 'CANCELLED'],
-      ]);
+
+      expect(result).toMatchObject({
+        status: 'CANCELLED',
+        cancelledAt: now,
+        cancelledById: adminId,
+        cancellationReason: reason,
+        completedAt: null,
+      });
+      expect(result.statusHistory.at(-1)).toMatchObject({
+        fromStatus: 'COMPLETED',
+        toStatus: 'CANCELLED',
+        actorUserId: adminId,
+        actorRole: 'ADMIN',
+        reason,
+      });
     });
 
-    it('rejects reconfirmation for an inactive or unapproved tutor', async () => {
+    it('rejects reconfirmation for an inactive tutor', async () => {
       const booking = await createActionBooking({ status: 'CANCELLED' });
       const service = new BookingService(() => new Date('2026-07-19T10:00:00.000Z'));
 
       await prisma.user.update({ where: { id: tutorId }, data: { status: 'BANNED' } });
+      await expect(
+        service.overrideStatus(
+          booking.id,
+          { id: adminId, role: 'ADMIN' },
+          'CONFIRMED',
+          'Restore'
+        )
+      ).rejects.toMatchObject({ statusCode: 409, code: 'TUTOR_NOT_APPROVED' });
+    });
+
+    it('rejects reconfirmation for an unapproved tutor', async () => {
+      const booking = await createActionBooking({ status: 'CANCELLED' });
+      const service = new BookingService(() => new Date('2026-07-19T10:00:00.000Z'));
+
+      await prisma.tutorProfile.update({
+        where: { id: tutorProfileId },
+        data: { approvalStatus: 'REJECTED' },
+      });
       await expect(
         service.overrideStatus(
           booking.id,
@@ -975,7 +1080,7 @@ describe('Booking Core Service & Repository Tests', () => {
       ).resolves.toMatchObject({ status: 'CONFIRMED' });
     });
 
-    it('blocks transition away from a reviewed completed booking', async () => {
+    it('blocks both transitions away from a reviewed completed booking without history', async () => {
       const booking = await createActionBooking({ status: 'COMPLETED' });
       await prisma.review.create({
         data: {
@@ -988,14 +1093,21 @@ describe('Booking Core Service & Repository Tests', () => {
       });
       const service = new BookingService(() => new Date('2026-07-21T12:00:00.000Z'));
 
-      await expect(
-        service.overrideStatus(
-          booking.id,
-          { id: adminId, role: 'ADMIN' },
-          'CANCELLED',
-          'Correction'
-        )
-      ).rejects.toMatchObject({ statusCode: 409, code: 'BOOKING_STATUS_CONFLICT' });
+      for (const targetStatus of ['CONFIRMED', 'CANCELLED'] as const) {
+        await expect(
+          service.overrideStatus(
+            booking.id,
+            { id: adminId, role: 'ADMIN' },
+            targetStatus,
+            `Correction to ${targetStatus}`
+          )
+        ).rejects.toMatchObject({ statusCode: 409, code: 'BOOKING_STATUS_CONFLICT' });
+      }
+
+      expect(await prisma.booking.findUnique({ where: { id: booking.id } })).toMatchObject({
+        status: 'COMPLETED',
+      });
+      expect(await prisma.bookingStatusHistory.count({ where: { bookingId: booking.id } })).toBe(0);
     });
 
     it('returns valid admin transitions in booking detail', async () => {
@@ -1007,6 +1119,110 @@ describe('Booking Core Service & Repository Tests', () => {
         expect.arrayContaining(['CONFIRMED', 'COMPLETED'])
       );
       expect(detail.allowedAdminTransitions).not.toContain('CANCELLED');
+    });
+
+    it('omits reconfirmation from admin transitions for inactive and unapproved tutors', async () => {
+      const booking = await createActionBooking({ status: 'CANCELLED' });
+      const service = new BookingService(() => new Date('2026-07-19T10:00:00.000Z'));
+
+      await prisma.user.update({ where: { id: tutorId }, data: { status: 'BANNED' } });
+      const inactiveDetail = await service.getDetail(booking.id, adminId, 'ADMIN');
+      expect(inactiveDetail.allowedAdminTransitions).not.toContain('CONFIRMED');
+
+      await prisma.user.update({ where: { id: tutorId }, data: { status: 'ACTIVE' } });
+      await prisma.tutorProfile.update({
+        where: { id: tutorProfileId },
+        data: { approvalStatus: 'REJECTED' },
+      });
+      const unapprovedDetail = await service.getDetail(booking.id, adminId, 'ADMIN');
+      expect(unapprovedDetail.allowedAdminTransitions).not.toContain('CONFIRMED');
+    });
+
+    it('omits reconfirmation from admin transitions when another confirmed booking overlaps', async () => {
+      const booking = await createActionBooking({ status: 'CANCELLED' });
+      await prisma.booking.create({
+        data: {
+          studentId,
+          tutorProfileId,
+          categoryId,
+          startAt: new Date('2026-07-20T10:30:00.000Z'),
+          endAt: new Date('2026-07-20T11:30:00.000Z'),
+          durationMinutes: 60,
+          hourlyRateSnapshot: 50,
+          quotedPrice: 50,
+          status: 'CONFIRMED',
+        },
+      });
+      const service = new BookingService(() => new Date('2026-07-19T10:00:00.000Z'));
+
+      const detail = await service.getDetail(booking.id, adminId, 'ADMIN');
+
+      expect(detail.allowedAdminTransitions).not.toContain('CONFIRMED');
+      expect(detail.allowedAdminTransitions).toContain('COMPLETED');
+    });
+
+    it('returns no admin transitions for a reviewed completed booking', async () => {
+      const booking = await createActionBooking({ status: 'COMPLETED' });
+      await prisma.review.create({
+        data: {
+          bookingId: booking.id,
+          studentId,
+          tutorProfileId,
+          rating: 5,
+          comment: 'Excellent session',
+        },
+      });
+      const service = new BookingService(() => new Date('2026-07-21T12:00:00.000Z'));
+
+      const detail = await service.getDetail(booking.id, adminId, 'ADMIN');
+
+      expect(detail.allowedAdminTransitions).toEqual([]);
+    });
+
+    it('omits admin transitions from non-admin booking detail', async () => {
+      const booking = await createActionBooking({ status: 'CANCELLED' });
+      const service = new BookingService(() => new Date('2026-07-19T10:00:00.000Z'));
+
+      const detail = await service.getDetail(booking.id, studentId, 'STUDENT');
+
+      expect(detail).not.toHaveProperty('allowedAdminTransitions');
+    });
+
+    it('orders status history deterministically when timestamps are equal', async () => {
+      const booking = await createActionBooking({ status: 'CANCELLED' });
+      const createdAt = new Date('2026-07-19T10:00:00.000Z');
+      await prisma.bookingStatusHistory.createMany({
+        data: [
+          {
+            id: 'history-z',
+            bookingId: booking.id,
+            fromStatus: 'COMPLETED',
+            toStatus: 'CANCELLED',
+            actorUserId: adminId,
+            actorRole: 'ADMIN',
+            reason: 'Second by stable ID',
+            createdAt,
+          },
+          {
+            id: 'history-a',
+            bookingId: booking.id,
+            fromStatus: 'CONFIRMED',
+            toStatus: 'COMPLETED',
+            actorUserId: adminId,
+            actorRole: 'ADMIN',
+            reason: 'First by stable ID',
+            createdAt,
+          },
+        ],
+      });
+      const service = new BookingService(() => new Date('2026-07-21T12:00:00.000Z'));
+
+      const detail = await service.getDetail(booking.id, adminId, 'ADMIN');
+
+      expect(detail.statusHistory.map((entry) => entry.id)).toEqual([
+        'history-a',
+        'history-z',
+      ]);
     });
   });
 });
