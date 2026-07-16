@@ -2,10 +2,7 @@ import { prisma } from '../../config/db.js';
 
 export class BookingRepository {
   async lockTutorProfile(tutorProfileId: string, tx: any) {
-    await tx.$executeRawUnsafe(
-      'SELECT 1 FROM tutor_profile WHERE id = $1 FOR UPDATE',
-      tutorProfileId
-    );
+    await tx.$executeRaw`SELECT 1 FROM tutor_profile WHERE id = ${tutorProfileId} FOR UPDATE`;
   }
 
   async createBooking(data: {
@@ -72,6 +69,7 @@ export class BookingRepository {
             include: { user: { select: { id: true, name: true, email: true } } },
           },
           category: true,
+          review: true,
         },
       }),
       prisma.booking.count({ where }),
