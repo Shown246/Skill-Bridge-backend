@@ -1,9 +1,80 @@
+import type { BookingStatus, UserRole } from '@prisma/client';
 import { prisma } from '../../config/db.js';
 import { bookingRepository } from './booking.repository.js';
+import type { BookingActor, BookingTransitionCommand } from './booking.types.js';
 import { AppError, NotFoundError, ConflictError, ForbiddenError } from '../../shared/errors/app-error.js';
 import { env } from '../../config/env.js';
 
 export class BookingService {
+  constructor(private readonly now: () => Date = () => new Date()) {}
+
+  async cancel(bookingId: string, actor: BookingActor, reason?: string) {
+    return this.transition(bookingId, actor, {
+      mode: 'PARTICIPANT_CANCEL',
+      targetStatus: 'CANCELLED',
+      reason,
+    });
+  }
+
+  private async transition(
+    bookingId: string,
+    actor: BookingActor,
+    command: BookingTransitionCommand
+  ) {
+    const bookingRef = await bookingRepository.findTutorProfileIdByBookingId(bookingId);
+    if (!bookingRef) {
+      throw new NotFoundError('Booking not found.');
+    }
+
+    await prisma.$transaction(
+      async (tx) => {
+        await bookingRepository.lockTutorProfile(bookingRef.tutorProfileId, tx);
+        const booking = await bookingRepository.findTransitionState(bookingId, tx);
+        if (!booking) {
+          throw new NotFoundError('Booking not found.');
+        }
+
+        const transitionNow = this.now();
+
+        if (command.mode === 'PARTICIPANT_CANCEL') {
+          const isOwner = actor.role === 'STUDENT' && booking.studentId === actor.id;
+          const isAssignedTutor =
+            actor.role === 'TUTOR' && booking.tutorProfile.userId === actor.id;
+          if (!isOwner && !isAssignedTutor) {
+            throw new ForbiddenError('Access denied.');
+          }
+          if (booking.status !== 'CONFIRMED') {
+            throw new ConflictError(
+              'Only confirmed bookings can be cancelled.',
+              'BOOKING_STATUS_CONFLICT'
+            );
+          }
+          if (transitionNow.getTime() >= booking.startAt.getTime()) {
+            throw new ConflictError(
+              'Booking cancellation is not allowed at or after the start time.',
+              'BOOKING_ALREADY_STARTED'
+            );
+          }
+        }
+
+        await bookingRepository.transitionBooking(
+          {
+            bookingId,
+            fromStatus: booking.status,
+            toStatus: command.targetStatus,
+            actor,
+            reason: command.reason,
+            now: transitionNow,
+          },
+          tx
+        );
+      },
+      { maxWait: 15000, timeout: 15000 }
+    );
+
+    return this.getDetail(bookingId, actor.id, actor.role);
+  }
+
   async create(studentId: string, data: {
     tutorId: string;
     categoryId: string;

@@ -1,6 +1,6 @@
 import { jest, describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import { prisma } from '../src/config/db.js';
-import { bookingService } from '../src/modules/bookings/booking.service.js';
+import { BookingService, bookingService } from '../src/modules/bookings/booking.service.js';
 import { bookingRepository } from '../src/modules/bookings/booking.repository.js';
 import {
   adminBookingStatusSchema,
@@ -140,6 +140,30 @@ describe('Booking Core Service & Repository Tests', () => {
     await prisma.session.deleteMany();
     await prisma.account.deleteMany();
     await prisma.user.deleteMany();
+  }
+
+  async function createActionBooking(input?: {
+    status?: 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
+    startAt?: Date;
+    endAt?: Date;
+    studentId?: string;
+  }) {
+    const startAt = input?.startAt ?? new Date('2026-07-20T10:00:00.000Z');
+    const endAt = input?.endAt ?? new Date('2026-07-20T11:00:00.000Z');
+
+    return prisma.booking.create({
+      data: {
+        studentId: input?.studentId ?? studentId,
+        tutorProfileId,
+        categoryId,
+        startAt,
+        endAt,
+        durationMinutes: 60,
+        hourlyRateSnapshot: 50,
+        quotedPrice: 50,
+        status: input?.status ?? 'CONFIRMED',
+      },
+    });
   }
 
   // ─── Step 1: Validation Schemas ────────────────────────────────────────
@@ -530,6 +554,86 @@ describe('Booking Core Service & Repository Tests', () => {
       expect(listRes.bookings.length).toBe(1);
       expect(listRes.bookings[0].status).toBe('CONFIRMED');
       expect(new Date(listRes.bookings[0].startAt).getTime()).toBeGreaterThanOrEqual(new Date('2026-07-20T00:00:00.000Z').getTime());
+    });
+  });
+
+  describe('BookingService.cancel', () => {
+    const beforeStart = new Date('2026-07-20T09:59:59.999Z');
+    const atStart = new Date('2026-07-20T10:00:00.000Z');
+
+    beforeEach(async () => {
+      await prisma.review.deleteMany();
+      await prisma.bookingStatusHistory.deleteMany();
+      await prisma.booking.deleteMany();
+    });
+
+    it('lets the owning student cancel one millisecond before start and writes history', async () => {
+      const booking = await createActionBooking();
+      const service = new BookingService(() => beforeStart);
+
+      const result = await service.cancel(
+        booking.id,
+        { id: studentId, role: 'STUDENT' },
+        'Schedule conflict'
+      );
+
+      expect(result.status).toBe('CANCELLED');
+      expect(result.cancelledAt).toEqual(beforeStart);
+      expect(result.cancelledById).toBe(studentId);
+      expect(result.cancellationReason).toBe('Schedule conflict');
+      expect(result.completedAt).toBeNull();
+      expect(result.statusHistory.at(-1)).toMatchObject({
+        fromStatus: 'CONFIRMED',
+        toStatus: 'CANCELLED',
+        actorUserId: studentId,
+        actorRole: 'STUDENT',
+        reason: 'Schedule conflict',
+      });
+
+      await expect(
+        service.cancel(booking.id, { id: studentId, role: 'STUDENT' })
+      ).rejects.toMatchObject({ statusCode: 409, code: 'BOOKING_STATUS_CONFLICT' });
+      expect(await prisma.bookingStatusHistory.count({ where: { bookingId: booking.id } })).toBe(1);
+    });
+
+    it('lets the assigned tutor cancel without a reason', async () => {
+      const booking = await createActionBooking();
+      const service = new BookingService(() => beforeStart);
+
+      const result = await service.cancel(booking.id, { id: tutorId, role: 'TUTOR' });
+
+      expect(result.status).toBe('CANCELLED');
+      expect(result.cancelledById).toBe(tutorId);
+      expect(result.cancellationReason).toBeNull();
+    });
+
+    it('rejects unrelated actors before changing state', async () => {
+      const booking = await createActionBooking();
+      const service = new BookingService(() => beforeStart);
+
+      await expect(
+        service.cancel(booking.id, { id: otherUserId, role: 'STUDENT' })
+      ).rejects.toMatchObject({ statusCode: 403, code: 'FORBIDDEN' });
+      expect(await prisma.bookingStatusHistory.count({ where: { bookingId: booking.id } })).toBe(0);
+    });
+
+    it('rejects cancellation exactly at start', async () => {
+      const booking = await createActionBooking();
+      const service = new BookingService(() => atStart);
+
+      await expect(
+        service.cancel(booking.id, { id: studentId, role: 'STUDENT' })
+      ).rejects.toMatchObject({ statusCode: 409, code: 'BOOKING_ALREADY_STARTED' });
+      expect(await prisma.bookingStatusHistory.count({ where: { bookingId: booking.id } })).toBe(0);
+    });
+
+    it('rejects cancellation from a non-confirmed status', async () => {
+      const booking = await createActionBooking({ status: 'COMPLETED' });
+      const service = new BookingService(() => beforeStart);
+
+      await expect(
+        service.cancel(booking.id, { id: studentId, role: 'STUDENT' })
+      ).rejects.toMatchObject({ statusCode: 409, code: 'BOOKING_STATUS_CONFLICT' });
     });
   });
 });

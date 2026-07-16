@@ -1,7 +1,11 @@
+import type { Prisma, UserRole } from '@prisma/client';
 import { prisma } from '../../config/db.js';
+import type { BookingTransitionWrite } from './booking.types.js';
+
+type TransactionClient = Prisma.TransactionClient;
 
 export class BookingRepository {
-  async lockTutorProfile(tutorProfileId: string, tx: any) {
+  async lockTutorProfile(tutorProfileId: string, tx: TransactionClient) {
     await tx.$executeRaw`SELECT 1 FROM tutor_profile WHERE id = ${tutorProfileId} FOR UPDATE`;
   }
 
@@ -15,7 +19,7 @@ export class BookingRepository {
     hourlyRateSnapshot: number;
     quotedPrice: number;
     note?: string;
-  }, tx: any) {
+  }, tx: TransactionClient) {
     const booking = await tx.booking.create({
       data: {
         studentId: data.studentId,
@@ -43,7 +47,12 @@ export class BookingRepository {
     return booking;
   }
 
-  async checkOverlap(tutorProfileId: string, startAt: Date, endAt: Date, tx: any) {
+  async checkOverlap(
+    tutorProfileId: string,
+    startAt: Date,
+    endAt: Date,
+    tx: TransactionClient
+  ) {
     const count = await tx.booking.count({
       where: {
         tutorProfileId,
@@ -53,6 +62,68 @@ export class BookingRepository {
       },
     });
     return count > 0;
+  }
+
+  async findTutorProfileIdByBookingId(bookingId: string) {
+    return prisma.booking.findUnique({
+      where: { id: bookingId },
+      select: { tutorProfileId: true },
+    });
+  }
+
+  async findTransitionState(bookingId: string, tx: TransactionClient) {
+    return tx.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        review: true,
+        tutorProfile: {
+          include: {
+            user: {
+              select: { id: true, status: true },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  async transitionBooking(write: BookingTransitionWrite, tx: TransactionClient) {
+    const cancellationData =
+      write.toStatus === 'CANCELLED'
+        ? {
+            cancelledAt: write.now,
+            cancelledById: write.actor.id,
+            cancellationReason: write.reason ?? null,
+            completedAt: null,
+          }
+        : {
+            cancelledAt: null,
+            cancelledById: null,
+            cancellationReason: null,
+          };
+
+    const booking = await tx.booking.update({
+      where: { id: write.bookingId },
+      data: {
+        status: write.toStatus,
+        ...cancellationData,
+        completedAt: write.toStatus === 'COMPLETED' ? write.now : null,
+      },
+    });
+
+    await tx.bookingStatusHistory.create({
+      data: {
+        bookingId: write.bookingId,
+        fromStatus: write.fromStatus,
+        toStatus: write.toStatus,
+        actorUserId: write.actor.id,
+        actorRole: write.actor.role as UserRole,
+        reason: write.reason ?? null,
+        createdAt: write.now,
+      },
+    });
+
+    return booking;
   }
 
   async listBookings(where: any, page: number, pageSize: number) {
