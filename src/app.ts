@@ -14,6 +14,7 @@ import userRoutes from './modules/users/user.routes.js';
 import categoryRoutes from './modules/categories/category.routes.js';
 import tutorRoutes from './modules/tutors/tutor.routes.js';
 import availabilityRoutes from './modules/availability/availability.routes.js';
+import bookingRoutes from './modules/bookings/booking.routes.js';
 
 const app = express();
 
@@ -103,6 +104,7 @@ app.use('/api/v1', userRoutes);
 app.use('/api/v1', categoryRoutes);
 app.use('/api/v1', tutorRoutes);
 app.use('/api/v1', availabilityRoutes);
+app.use('/api/v1', bookingRoutes);
 
 // 9. Not-found handler
 app.use((req, res, next) => {

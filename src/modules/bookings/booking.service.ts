@@ -99,6 +99,9 @@ export class BookingService {
         quotedPrice: price,
         note: data.note,
       }, tx);
+    }, {
+      maxWait: 15000,
+      timeout: 15000,
     });
   }
 
