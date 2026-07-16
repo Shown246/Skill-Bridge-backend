@@ -65,7 +65,7 @@ The most important settings are:
 | `FRONTEND_ORIGIN` | Exact frontend origin accepted by CORS. |
 | `JWT_ISSUER` / `JWT_AUDIENCE` | Required JWT verification claims. |
 | `BOOKING_DURATION_OPTIONS` | Comma-separated allowed session lengths in minutes. |
-| `ADMIN_*` | Administrator created or repaired by the seed script. |
+| `ADMIN_*` | Identity and credentials used by the administrator seed script. |
 | `*_RATE_LIMIT_*` | Windows and quotas for auth, sensitive mutations, and general API traffic. |
 | `TRUST_PROXY` | Express proxy trust: `false`, `true`, or a non-negative hop count. |
 
@@ -123,10 +123,9 @@ npm run seed
 
 The seed is idempotent by email:
 
-- A missing account is created through Better Auth and promoted to `ADMIN`.
-- An existing non-admin account is upgraded.
-- An existing administrator is left as an administrator.
-- The resulting account is active and email-verified.
+- A missing account is created through Better Auth, promoted to `ADMIN`, activated, and email-verified.
+- An existing non-admin account is upgraded to `ADMIN`, activated, and email-verified.
+- An existing administrator is left unchanged, including current status and verification fields.
 
 The seed does not intentionally print the administrator password. Never place real credentials in source control.
 
@@ -161,7 +160,7 @@ npm start
 | `npm run test:coverage` | Run the complete suite and generate coverage output. |
 | `npm run prisma:generate` | Generate Prisma Client. |
 | `npm run prisma:migrate -- --name <name>` | Apply the local development migration workflow. |
-| `npm run seed` | Create or repair the configured administrator. |
+| `npm run seed` | Create the configured administrator or upgrade a matching non-admin account. |
 
 ## API organization
 
