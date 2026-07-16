@@ -287,19 +287,25 @@ export class BookingService {
 
     if (booking.status === 'CONFIRMED') {
       const participantCanCancel =
-        booking.studentId === userId || booking.tutorProfile.userId === userId;
+        (role === 'STUDENT' && booking.studentId === userId) ||
+        (role === 'TUTOR' && booking.tutorProfile.userId === userId);
       if (participantCanCancel && now.getTime() < booking.startAt.getTime()) {
         actions.push('CANCEL');
       }
 
       const actorCanComplete =
-        booking.tutorProfile.userId === userId || role === 'ADMIN';
+        (role === 'TUTOR' && booking.tutorProfile.userId === userId) || role === 'ADMIN';
       if (actorCanComplete && now.getTime() >= booking.endAt.getTime()) {
         actions.push('COMPLETE');
       }
     }
 
-    if (booking.status === 'COMPLETED' && booking.studentId === userId && !booking.review) {
+    if (
+      booking.status === 'COMPLETED' &&
+      role === 'STUDENT' &&
+      booking.studentId === userId &&
+      !booking.review
+    ) {
       actions.push('REVIEW');
     }
 

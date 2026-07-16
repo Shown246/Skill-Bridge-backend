@@ -725,5 +725,50 @@ describe('Booking Core Service & Repository Tests', () => {
         (await afterEnd.getDetail(booking.id, adminId, 'ADMIN')).allowedActions
       ).toEqual(['COMPLETE']);
     });
+
+    it('does not expose participant actions when an actor ID is paired with the wrong role', async () => {
+      const booking = await createActionBooking();
+      const beforeStart = new BookingService(() => new Date('2026-07-20T09:00:00.000Z'));
+      const afterEnd = new BookingService(() => new Date('2026-07-20T11:00:00.000Z'));
+
+      expect(
+        (await beforeStart.getDetail(booking.id, studentId, 'TUTOR')).allowedActions
+      ).toEqual([]);
+      expect(
+        (await beforeStart.getDetail(booking.id, tutorId, 'STUDENT')).allowedActions
+      ).toEqual([]);
+      expect(
+        (await afterEnd.getDetail(booking.id, tutorId, 'STUDENT')).allowedActions
+      ).toEqual([]);
+    });
+
+    it('exposes review only to the owning student while the completed booking is unreviewed', async () => {
+      const booking = await createActionBooking({ status: 'COMPLETED' });
+      const service = new BookingService(() => new Date('2026-07-20T11:00:00.000Z'));
+
+      expect(
+        (await service.getDetail(booking.id, studentId, 'STUDENT')).allowedActions
+      ).toEqual(['REVIEW']);
+      expect(
+        (await service.getDetail(booking.id, studentId, 'TUTOR')).allowedActions
+      ).toEqual([]);
+      expect(
+        (await service.getDetail(booking.id, studentId, 'ADMIN')).allowedActions
+      ).toEqual([]);
+
+      await prisma.review.create({
+        data: {
+          bookingId: booking.id,
+          studentId,
+          tutorProfileId,
+          rating: 5,
+          comment: 'Great session!',
+        },
+      });
+
+      expect(
+        (await service.getDetail(booking.id, studentId, 'STUDENT')).allowedActions
+      ).toEqual([]);
+    });
   });
 });
