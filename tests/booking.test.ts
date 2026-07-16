@@ -121,6 +121,29 @@ describe('Booking Core API', () => {
     return tokenRes.body.token;
   }
 
+  async function createDirectBooking(input?: {
+    status?: 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
+    startAt?: Date;
+    endAt?: Date;
+  }) {
+    const startAt = input?.startAt ?? new Date(Date.now() + 60 * 60 * 1000);
+    const endAt = input?.endAt ?? new Date(startAt.getTime() + 60 * 60 * 1000);
+
+    return prisma.booking.create({
+      data: {
+        studentId: studentUserId,
+        tutorProfileId: tutorId,
+        categoryId,
+        startAt,
+        endAt,
+        durationMinutes: 60,
+        hourlyRateSnapshot: 40,
+        quotedPrice: 40,
+        status: input?.status ?? 'CONFIRMED',
+      },
+    });
+  }
+
   describe('POST /api/v1/bookings', () => {
     it('should create booking successfully', async () => {
       // 2026-07-20 is Monday
@@ -280,6 +303,177 @@ describe('Booking Core API', () => {
         .set('Authorization', `Bearer ${otherStudentToken}`);
 
       expect(res.status).toBe(403);
+    });
+
+    it('should reject an invalid booking ID', async () => {
+      const res = await request(app)
+        .get('/api/v1/bookings/not-a-uuid')
+        .set('Authorization', `Bearer ${studentToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    });
+  });
+
+  describe('PATCH booking actions', () => {
+    beforeEach(async () => {
+      await prisma.review.deleteMany();
+      await prisma.bookingStatusHistory.deleteMany();
+      await prisma.booking.deleteMany();
+    });
+
+    it('lets the student cancel their future booking and returns embedded history', async () => {
+      const booking = await createDirectBooking();
+      await prisma.bookingStatusHistory.create({
+        data: {
+          id: 'history-initial-confirmation',
+          bookingId: booking.id,
+          fromStatus: null,
+          toStatus: 'CONFIRMED',
+          actorUserId: studentUserId,
+          actorRole: 'STUDENT',
+          createdAt: new Date(Date.now() - 60 * 1000),
+        },
+      });
+      const res = await request(app)
+        .patch(`/api/v1/bookings/${booking.id}/cancel`)
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({ reason: '  Cannot attend  ' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toMatchObject({
+        status: 'CANCELLED',
+        cancelledById: studentUserId,
+        cancellationReason: 'Cannot attend',
+      });
+      expect(res.body.data.statusHistory[0].id).toBe('history-initial-confirmation');
+      expect(res.body.data.statusHistory.at(-1)).toMatchObject({
+        fromStatus: 'CONFIRMED',
+        toStatus: 'CANCELLED',
+        actorRole: 'STUDENT',
+        reason: 'Cannot attend',
+      });
+    });
+
+    it('rejects invalid booking IDs and cancellation at start or later', async () => {
+      const invalid = await request(app)
+        .patch('/api/v1/bookings/not-a-uuid/cancel')
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({});
+      expect(invalid.status).toBe(400);
+      expect(invalid.body.error.code).toBe('VALIDATION_ERROR');
+
+      const started = await createDirectBooking({
+        startAt: new Date(Date.now() - 1000),
+        endAt: new Date(Date.now() + 60 * 60 * 1000),
+      });
+      const boundary = await request(app)
+        .patch(`/api/v1/bookings/${started.id}/cancel`)
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({});
+      expect(boundary.status).toBe(409);
+      expect(boundary.body.error.code).toBe('BOOKING_ALREADY_STARTED');
+    });
+
+    it('lets the assigned tutor complete an ended booking', async () => {
+      const booking = await createDirectBooking({
+        startAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+        endAt: new Date(Date.now() - 60 * 60 * 1000),
+      });
+      const res = await request(app)
+        .patch(`/api/v1/bookings/${booking.id}/complete`)
+        .set('Authorization', `Bearer ${tutorToken}`)
+        .send();
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('COMPLETED');
+      expect(res.body.data.statusHistory.at(-1).actorRole).toBe('TUTOR');
+    });
+
+    it('rejects student completion and participant access to admin override', async () => {
+      const booking = await createDirectBooking({
+        startAt: new Date(Date.now() - 2 * 60 * 60 * 1000),
+        endAt: new Date(Date.now() - 60 * 60 * 1000),
+      });
+
+      const studentComplete = await request(app)
+        .patch(`/api/v1/bookings/${booking.id}/complete`)
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send();
+      expect(studentComplete.status).toBe(403);
+
+      const participantOverride = await request(app)
+        .patch(`/api/v1/admin/bookings/${booking.id}/status`)
+        .set('Authorization', `Bearer ${tutorToken}`)
+        .send({ status: 'CANCELLED', reason: 'Not allowed' });
+      expect(participantOverride.status).toBe(403);
+    });
+
+    it('lets admin override early with a required reason and returns admin transitions', async () => {
+      const booking = await createDirectBooking();
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${booking.id}/status`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'COMPLETED', reason: '  Support verified completion  ' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('COMPLETED');
+      expect(res.body.data.statusHistory.at(-1).reason).toBe('Support verified completion');
+      expect(res.body.data.allowedAdminTransitions).toEqual(
+        expect.arrayContaining(['CONFIRMED', 'CANCELLED'])
+      );
+
+      const missingReason = await request(app)
+        .patch(`/api/v1/admin/bookings/${booking.id}/status`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'CANCELLED', reason: '   ' });
+      expect(missingReason.status).toBe(400);
+      expect(missingReason.body.error.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('serializes admin reconfirmation against booking creation', async () => {
+      const startAt = '2026-07-20T09:00:00.000Z';
+      const cancelled = await prisma.booking.create({
+        data: {
+          studentId: studentUserId,
+          tutorProfileId: tutorId,
+          categoryId,
+          startAt: new Date(startAt),
+          endAt: new Date('2026-07-20T10:00:00.000Z'),
+          durationMinutes: 60,
+          hourlyRateSnapshot: 40,
+          quotedPrice: 40,
+          status: 'CANCELLED',
+        },
+      });
+
+      const [overrideRes, createRes] = await Promise.all([
+        request(app)
+          .patch(`/api/v1/admin/bookings/${cancelled.id}/status`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ status: 'CONFIRMED', reason: 'Restore booking' }),
+        request(app)
+          .post('/api/v1/bookings')
+          .set('Authorization', `Bearer ${studentToken}`)
+          .send({ tutorId, categoryId, startAt, durationMinutes: 60 }),
+      ]);
+
+      expect([
+        [200, 409],
+        [409, 201],
+      ]).toContainEqual([overrideRes.status, createRes.status]);
+      const losingResponse = overrideRes.status === 409 ? overrideRes : createRes;
+      expect(losingResponse.body.error.code).toBe('BOOKING_SLOT_CONFLICT');
+      expect(
+        await prisma.booking.count({
+          where: {
+            tutorProfileId: tutorId,
+            status: 'CONFIRMED',
+            startAt: { lt: new Date('2026-07-20T10:00:00.000Z') },
+            endAt: { gt: new Date(startAt) },
+          },
+        })
+      ).toBe(1);
     });
   });
 
