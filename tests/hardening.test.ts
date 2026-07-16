@@ -107,6 +107,9 @@ describe('hardening configuration', () => {
       .post('/api/auth/sign-up/email')
       .send({});
     expect(separateSignUpBucket.status).not.toBe(429);
+
+    expect((await request(app).get('/API/AUTH/TOKEN')).status).toBe(429);
+    expect((await request(app).get('/api/auth/token/')).status).toBe(429);
   });
 
   it('uses one sensitive quota for booking, review, and admin mutations', async () => {
@@ -123,6 +126,15 @@ describe('hardening configuration', () => {
     expect(blocked.status).toBe(429);
     expect(blocked.body.error.code).toBe('RATE_LIMITED');
     expect(blocked.headers).toHaveProperty('ratelimit-policy');
+    expect((await request(app).post('/API/V1/BOOKINGS').send({})).status).toBe(429);
+    expect((await request(app).post('/api/v1/bookings/').send({})).status).toBe(429);
+    expect(
+      (
+        await request(app)
+          .post('/api/v1/bookings/00000000-0000-0000-0000-000000000000/review/')
+          .send({})
+      ).status
+    ).toBe(429);
   });
 
   it('rate limits ordinary business traffic without limiting health checks', async () => {
@@ -135,6 +147,7 @@ describe('hardening configuration', () => {
 
     expect(blocked.status).toBe(429);
     expect(blocked.body.error.code).toBe('RATE_LIMITED');
+    expect((await request(app).get('/API/V1/NOT-A-REAL-ROUTE')).status).toBe(429);
     expect(health.status).toBe(200);
   });
 
@@ -146,6 +159,9 @@ describe('hardening configuration', () => {
       refreshToken: 'error-refresh-token',
       sessionId: 'error-session-id',
     });
+    const credentialMessageError = new Error(
+      'Authorization: Bearer message-token password=message-password'
+    );
 
     logger.info('credential audit', {
       password: 'plain-password',
@@ -158,10 +174,15 @@ describe('hardening configuration', () => {
       },
     });
     logger.error('credential error audit', customError);
+    logger.error(
+      'Authorization: Bearer top-level-token',
+      credentialMessageError
+    );
 
     const infoOutput = String(infoSpy.mock.calls[0]?.[0]);
     const errorOutput = String(errorSpy.mock.calls[0]?.[0]);
-    const combinedOutput = `${infoOutput}\n${errorOutput}`;
+    const messageErrorOutput = String(errorSpy.mock.calls[1]?.[0]);
+    const combinedOutput = `${infoOutput}\n${errorOutput}\n${messageErrorOutput}`;
     const errorEntry = JSON.parse(errorOutput) as {
       error: Record<string, unknown>;
     };
@@ -175,6 +196,9 @@ describe('hardening configuration', () => {
       'context-session-id',
       'error-refresh-token',
       'error-session-id',
+      'message-token',
+      'message-password',
+      'top-level-token',
     ]) {
       expect(combinedOutput).not.toContain(secret);
     }

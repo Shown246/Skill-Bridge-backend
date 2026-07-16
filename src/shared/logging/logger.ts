@@ -10,6 +10,29 @@ const SENSITIVE_KEY_PARTS = [
   'jwt',
   'apikey',
 ];
+const KNOWN_SECRET_VALUES = [
+  env.BETTER_AUTH_SECRET,
+  env.JWT_SECRET,
+  env.ADMIN_PASSWORD,
+].filter((value): value is string => typeof value === 'string' && value.length >= 8);
+
+function sanitizeString(value: string): string {
+  let sanitized = value
+    .replace(/\b(Bearer)\s+[^\s,;"']+/gi, '$1 [REDACTED]')
+    .replace(
+      /\b(password|token|secret|authorization|cookie|session|api[_-]?key)\s*[:=]\s*[^\s,;]+/gi,
+      '$1=[REDACTED]'
+    )
+    .replace(
+      /([a-z][a-z0-9+.-]*:\/\/[^:\s/@]+:)[^@\s/]+@/gi,
+      '$1[REDACTED]@'
+    );
+
+  for (const secret of KNOWN_SECRET_VALUES) {
+    sanitized = sanitized.replaceAll(secret, '[REDACTED]');
+  }
+  return sanitized;
+}
 
 function isSensitiveKey(key: string): boolean {
   const normalizedKey = key.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -18,6 +41,7 @@ function isSensitiveKey(key: string): boolean {
 
 function redact(value: unknown, visited = new WeakSet<object>()): unknown {
   if (value === null || value === undefined) return value;
+  if (typeof value === 'string') return sanitizeString(value);
   if (typeof value !== 'object') return value;
   if (value instanceof Date || value instanceof RegExp) return value;
   if (visited.has(value)) return '[Circular]';
@@ -30,8 +54,8 @@ function redact(value: unknown, visited = new WeakSet<object>()): unknown {
   const redacted: Record<string, unknown> = {};
   if (value instanceof Error) {
     redacted.name = value.name;
-    redacted.message = value.message;
-    redacted.stack = value.stack;
+    redacted.message = sanitizeString(value.message);
+    redacted.stack = value.stack ? sanitizeString(value.stack) : value.stack;
   }
 
   for (const [key, nestedValue] of Object.entries(value)) {
@@ -49,7 +73,7 @@ export const logger = {
     const logEntry = {
       timestamp: new Date().toISOString(),
       level: 'INFO',
-      message,
+      message: sanitizeString(message),
       ...(context ? { context: redact(context) } : {}),
     };
     if (env.NODE_ENV === 'test' && !process.env.DEBUG) return;
@@ -60,7 +84,7 @@ export const logger = {
     const logEntry = {
       timestamp: new Date().toISOString(),
       level: 'WARN',
-      message,
+      message: sanitizeString(message),
       ...(context ? { context: redact(context) } : {}),
     };
     if (env.NODE_ENV === 'test' && !process.env.DEBUG) return;
@@ -71,7 +95,7 @@ export const logger = {
     const logEntry = {
       timestamp: new Date().toISOString(),
       level: 'ERROR',
-      message,
+      message: sanitizeString(message),
       ...(error ? { error: redact(error) } : {}),
       ...(context ? { context: redact(context) } : {}),
     };
@@ -84,7 +108,7 @@ export const logger = {
     const logEntry = {
       timestamp: new Date().toISOString(),
       level: 'DEBUG',
-      message,
+      message: sanitizeString(message),
       ...(context ? { context: redact(context) } : {}),
     };
     if (env.NODE_ENV === 'test' && !process.env.DEBUG) return;

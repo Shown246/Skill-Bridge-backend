@@ -5,30 +5,37 @@ import { env } from '../config/env.js';
 const RATE_LIMIT_MESSAGE = 'Too many requests. Please try again later.';
 const MUTATION_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+function normalizedPath(req: Request): string {
+  const path = req.path.toLowerCase().replace(/\/+$/, '');
+  return path || '/';
+}
+
 function isAuthLimitedRequest(req: Request): boolean {
+  const path = normalizedPath(req);
   return (
     (req.method === 'POST' &&
-      (req.path === '/api/auth/sign-up/email' ||
-        req.path === '/api/auth/sign-in/email')) ||
-    (req.method === 'GET' && req.path === '/api/auth/token')
+      (path === '/api/auth/sign-up/email' ||
+        path === '/api/auth/sign-in/email')) ||
+    (req.method === 'GET' && path === '/api/auth/token')
   );
 }
 
 function isSensitiveRequest(req: Request): boolean {
-  if (req.method === 'POST' && req.path === '/api/v1/bookings') {
+  const path = normalizedPath(req);
+  if (req.method === 'POST' && path === '/api/v1/bookings') {
     return true;
   }
 
   if (
     req.method === 'POST' &&
-    /^\/api\/v1\/bookings\/[^/]+\/review$/.test(req.path)
+    /^\/api\/v1\/bookings\/[^/]+\/review$/.test(path)
   ) {
     return true;
   }
 
   return (
     MUTATION_METHODS.has(req.method) &&
-    (req.path === '/api/v1/admin' || req.path.startsWith('/api/v1/admin/'))
+    (path === '/api/v1/admin' || path.startsWith('/api/v1/admin/'))
   );
 }
 
@@ -66,7 +73,7 @@ export const authRateLimiter = createLimiter(
   env.AUTH_RATE_LIMIT_MAX,
   (req) => !isAuthLimitedRequest(req),
   (req) =>
-    `${req.path}:${ipKeyGenerator(req.ip ?? req.socket.remoteAddress ?? 'unknown')}`
+    `${normalizedPath(req)}:${ipKeyGenerator(req.ip ?? req.socket.remoteAddress ?? 'unknown')}`
 );
 
 export const sensitiveRateLimiter = createLimiter(
@@ -80,5 +87,5 @@ export const generalRateLimiter = createLimiter(
   'general',
   env.GENERAL_RATE_LIMIT_WINDOW_MS,
   env.GENERAL_RATE_LIMIT_MAX,
-  (req) => !req.path.startsWith('/api/v1') || isSensitiveRequest(req)
+  (req) => !normalizedPath(req).startsWith('/api/v1') || isSensitiveRequest(req)
 );
