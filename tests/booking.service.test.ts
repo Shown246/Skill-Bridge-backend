@@ -2,7 +2,13 @@ import { jest, describe, it, expect, beforeAll, afterAll, beforeEach } from '@je
 import { prisma } from '../src/config/db.js';
 import { bookingService } from '../src/modules/bookings/booking.service.js';
 import { bookingRepository } from '../src/modules/bookings/booking.repository.js';
-import { createBookingSchema, getBookingsQuerySchema } from '../src/modules/bookings/booking.schemas.js';
+import {
+  adminBookingStatusSchema,
+  bookingIdParamsSchema,
+  cancelBookingSchema,
+  createBookingSchema,
+  getBookingsQuerySchema,
+} from '../src/modules/bookings/booking.schemas.js';
 import { AppError, NotFoundError } from '../src/shared/errors/app-error.js';
 
 jest.setTimeout(60000);
@@ -196,6 +202,48 @@ describe('Booking Core Service & Repository Tests', () => {
         const query = { pageSize: 150 };
         const res = getBookingsQuerySchema.safeParse(query);
         expect(res.success).toBe(false);
+      });
+    });
+
+    describe('booking action schemas', () => {
+      it('normalizes an omitted or blank participant cancellation reason', () => {
+        expect(cancelBookingSchema.parse({})).toEqual({});
+        expect(cancelBookingSchema.parse({ reason: '   ' })).toEqual({ reason: undefined });
+        expect(cancelBookingSchema.parse({ reason: '  Schedule conflict  ' })).toEqual({
+          reason: 'Schedule conflict',
+        });
+      });
+
+      it('rejects a participant cancellation reason longer than 1000 characters', () => {
+        expect(cancelBookingSchema.safeParse({ reason: 'x'.repeat(1001) }).success).toBe(false);
+      });
+
+      it('requires a normalized admin reason and a supported target status', () => {
+        expect(
+          adminBookingStatusSchema.parse({
+            status: 'COMPLETED',
+            reason: '  Session verified by support  ',
+          })
+        ).toEqual({
+          status: 'COMPLETED',
+          reason: 'Session verified by support',
+        });
+
+        expect(
+          adminBookingStatusSchema.safeParse({ status: 'CANCELLED', reason: '   ' }).success
+        ).toBe(false);
+        expect(
+          adminBookingStatusSchema.safeParse({ status: 'PENDING', reason: 'Correction' }).success
+        ).toBe(false);
+      });
+
+      it('requires a UUID booking route parameter', () => {
+        expect(
+          bookingIdParamsSchema.safeParse({
+            bookingId: 'a3bc47d0-1c39-44d5-89f4-8d9ad7c9448f',
+          }).success
+        ).toBe(true);
+        expect(bookingIdParamsSchema.safeParse({ bookingId: 'not-a-uuid' }).success).toBe(false);
       });
     });
   });
