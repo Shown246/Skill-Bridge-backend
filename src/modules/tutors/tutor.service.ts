@@ -102,7 +102,7 @@ export class TutorService {
           },
         },
       });
-    });
+    }, { maxWait: 15000, timeout: 15000 });
   }
 
   async getAdminTutors(options: {

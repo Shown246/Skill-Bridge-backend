@@ -37,7 +37,7 @@ export class AvailabilityRepository {
         where: { tutorProfileId, isActive: true },
         orderBy: [{ dayOfWeek: 'asc' }, { startMinuteUtc: 'asc' }],
       });
-    });
+    }, { maxWait: 15000, timeout: 15000 });
   }
 }
 

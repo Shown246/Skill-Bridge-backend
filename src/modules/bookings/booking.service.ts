@@ -29,7 +29,8 @@ export class BookingService {
     }
 
     // Check midnight crossing
-    if (startAt.getUTCDay() !== endAt.getUTCDay()) {
+    const adjustedEndAt = new Date(endAt.getTime() - 1);
+    if (startAt.getUTCDay() !== adjustedEndAt.getUTCDay()) {
       throw new AppError(400, 'MIDNIGHT_CROSSING', 'Booking cannot wrap across UTC midnight.');
     }
 
