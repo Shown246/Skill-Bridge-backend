@@ -12,34 +12,32 @@ export class ReviewService {
     studentId: string,
     data: { rating: number; comment: string }
   ) {
-    const booking = await reviewRepository.findBookingForReview(bookingId);
-    if (!booking) {
-      throw new NotFoundError('Booking not found.');
-    }
-    if (booking.studentId !== studentId) {
-      throw new ForbiddenError('Only the booking student may review this session.');
-    }
-    if (booking.status !== 'COMPLETED') {
-      throw new ConflictError(
-        'Only completed bookings may be reviewed.',
-        'BOOKING_NOT_COMPLETED'
-      );
-    }
-    if (booking.review) {
-      throw new ConflictError(
-        'This booking has already been reviewed.',
-        'BOOKING_ALREADY_REVIEWED'
-      );
-    }
-
     try {
-      return await reviewRepository.create({
+      const result = await reviewRepository.createForBooking({
         bookingId,
         studentId,
-        tutorProfileId: booking.tutorProfileId,
         rating: data.rating,
         comment: data.comment,
       });
+      if (result.outcome === 'NOT_FOUND') {
+        throw new NotFoundError('Booking not found.');
+      }
+      if (result.outcome === 'FORBIDDEN') {
+        throw new ForbiddenError('Only the booking student may review this session.');
+      }
+      if (result.outcome === 'NOT_COMPLETED') {
+        throw new ConflictError(
+          'Only completed bookings may be reviewed.',
+          'BOOKING_NOT_COMPLETED'
+        );
+      }
+      if (result.outcome === 'ALREADY_REVIEWED') {
+        throw new ConflictError(
+          'This booking has already been reviewed.',
+          'BOOKING_ALREADY_REVIEWED'
+        );
+      }
+      return result.review;
     } catch (error) {
       if (
         error &&

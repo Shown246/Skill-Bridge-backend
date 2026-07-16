@@ -24,13 +24,13 @@ export const createReviewSchema = z.object({
 export const reviewListQuerySchema = z.object({
   page: z
     .preprocess(
-      (value) => (value ? Number.parseInt(value as string, 10) : undefined),
+      (value) => (value === undefined ? undefined : Number(value)),
       z.number().int().positive()
     )
     .default(1),
   pageSize: z
     .preprocess(
-      (value) => (value ? Number.parseInt(value as string, 10) : undefined),
+      (value) => (value === undefined ? undefined : Number(value)),
       z.number().int().positive().max(100)
     )
     .default(20),

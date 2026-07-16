@@ -82,7 +82,7 @@ export const publicTutorSearchSchema = z.object({
     .optional(),
   minRating: z
     .preprocess(
-      (val) => (val ? parseFloat(val as string) : undefined),
+      (val) => (val === undefined ? undefined : Number(val)),
       z.number().min(1).max(5).optional()
     )
     .optional(),

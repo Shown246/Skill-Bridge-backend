@@ -244,14 +244,10 @@ export class TutorService {
     if (!profile) {
       throw new NotFoundError('Tutor not found.');
     }
-    const { reviews, ...tutor } = profile;
+    const aggregate = await tutorRepository.getReviewAggregate(id);
     return {
-      ...tutor,
-      averageRating:
-        reviews.length === 0
-          ? 0
-          : reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length,
-      reviewCount: reviews.length,
+      ...profile,
+      ...aggregate,
     };
   }
 }

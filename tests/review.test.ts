@@ -25,6 +25,7 @@ describe('Reviews and tutor rating aggregates', () => {
   let app: any;
   let studentToken: string;
   let otherStudentToken: string;
+  let tutorToken: string;
   let tutorProfileId: string;
   let secondTutorProfileId: string;
   let studentId: string;
@@ -39,7 +40,7 @@ describe('Reviews and tutor rating aggregates', () => {
     const adminToken = await getAuthToken('review-admin@example.com', 'ADMIN');
     studentToken = await getAuthToken('review-student@example.com', 'STUDENT');
     otherStudentToken = await getAuthToken('review-other@example.com', 'STUDENT');
-    const tutorToken = await getAuthToken('review-tutor@example.com', 'TUTOR');
+    tutorToken = await getAuthToken('review-tutor@example.com', 'TUTOR');
     const secondTutorToken = await getAuthToken('review-tutor-two@example.com', 'TUTOR');
 
     studentId = (await prisma.user.findUnique({
@@ -200,6 +201,27 @@ describe('Reviews and tutor rating aggregates', () => {
       expect(response.status).toBe(400);
       expect(response.body.error.code).toBe('VALIDATION_ERROR');
     }
+
+    const lowerBoundary = await createBooking();
+    const lowerResponse = await request(app)
+      .post(`/api/v1/bookings/${lowerBoundary.id}/review`)
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({ rating: 1, comment: '1234567890' });
+    expect(lowerResponse.status).toBe(201);
+
+    const upperBoundary = await createBooking();
+    const upperResponse = await request(app)
+      .post(`/api/v1/bookings/${upperBoundary.id}/review`)
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({ rating: 5, comment: 'x'.repeat(2000) });
+    expect(upperResponse.status).toBe(201);
+
+    const overLimit = await createBooking();
+    const overLimitResponse = await request(app)
+      .post(`/api/v1/bookings/${overLimit.id}/review`)
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({ rating: 5, comment: 'x'.repeat(2001) });
+    expect(overLimitResponse.status).toBe(400);
   });
 
   it('rejects non-owners and bookings that are not completed', async () => {
@@ -217,6 +239,40 @@ describe('Reviews and tutor rating aggregates', () => {
       .send({ rating: 5, comment: 'The session is not completed yet.' });
     expect(notCompleted.status).toBe(409);
     expect(notCompleted.body.error.code).toBe('BOOKING_NOT_COMPLETED');
+
+    const missing = await request(app)
+      .post('/api/v1/bookings/00000000-0000-0000-0000-000000000000/review')
+      .set('Authorization', `Bearer ${studentToken}`)
+      .send({ rating: 5, comment: 'This booking does not exist.' });
+    expect(missing.status).toBe(404);
+
+    const unauthenticated = await request(app)
+      .post(`/api/v1/bookings/${ownedBooking.id}/review`)
+      .send({ rating: 5, comment: 'Authentication is required here.' });
+    expect(unauthenticated.status).toBe(401);
+
+    const wrongRole = await request(app)
+      .post(`/api/v1/bookings/${ownedBooking.id}/review`)
+      .set('Authorization', `Bearer ${tutorToken}`)
+      .send({ rating: 5, comment: 'Tutors cannot submit student reviews.' });
+    expect(wrongRole.status).toBe(403);
+
+    await prisma.user.update({
+      where: { id: studentId },
+      data: { status: 'BANNED' },
+    });
+    try {
+      const banned = await request(app)
+        .post(`/api/v1/bookings/${ownedBooking.id}/review`)
+        .set('Authorization', `Bearer ${studentToken}`)
+        .send({ rating: 5, comment: 'Banned users cannot create reviews.' });
+      expect(banned.status).toBe(403);
+    } finally {
+      await prisma.user.update({
+        where: { id: studentId },
+        data: { status: 'ACTIVE' },
+      });
+    }
   });
 
   it('lists public reviews with pagination without reviewer email', async () => {
@@ -254,6 +310,10 @@ describe('Reviews and tutor rating aggregates', () => {
     });
     expect(response.body.data[0].student.name).toBeDefined();
     expect(response.body.data[0].student.email).toBeUndefined();
+
+    const malformedPage = await request(app)
+      .get(`/api/v1/tutors/${tutorProfileId}/reviews?page=1junk`);
+    expect(malformedPage.status).toBe(400);
   });
 
   it('returns live aggregates and supports rating and review-count sorting', async () => {
@@ -302,5 +362,9 @@ describe('Reviews and tutor rating aggregates', () => {
     const filtered = await request(app).get('/api/v1/tutors?minRating=4.5');
     expect(filtered.body.data.map((tutor: { id: string }) => tutor.id))
       .toEqual([secondTutorProfileId]);
+
+    const malformedRating = await request(app)
+      .get('/api/v1/tutors?minRating=4.5junk');
+    expect(malformedRating.status).toBe(400);
   });
 });
