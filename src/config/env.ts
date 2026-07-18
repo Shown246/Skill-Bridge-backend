@@ -2,11 +2,20 @@ import dotenv from 'dotenv';
 import { z } from 'zod';
 
 // Load environment variables from .env
-dotenv.config();
+const dotenvResult = dotenv.config();
+const parsedDotenv = dotenvResult.parsed || {};
 
-const positiveInteger = (defaultValue: number) =>
+const positiveInteger = (defaultValue: number, envKey?: string) =>
   z.preprocess(
-    (value) => value === undefined ? defaultValue : Number(value),
+    (value) => {
+      if (isTestEnvironment && envKey) {
+        const dotenvValue = parsedDotenv[envKey];
+        if (value === undefined || (dotenvValue !== undefined && String(value) === dotenvValue)) {
+          return defaultValue;
+        }
+      }
+      return value === undefined ? defaultValue : Number(value);
+    },
     z.number().int().positive()
   );
 
@@ -42,12 +51,12 @@ const envSchema = z.object({
   ADMIN_NAME: z.string().default('SkillBridge Admin'),
   ADMIN_EMAIL: z.string().email().default('admin@example.com'),
   ADMIN_PASSWORD: z.string().min(8).default('replace-with-a-strong-password'),
-  AUTH_RATE_LIMIT_WINDOW_MS: positiveInteger(15 * 60 * 1000),
-  AUTH_RATE_LIMIT_MAX: positiveInteger(isTestEnvironment ? testRateLimitMax : 10),
-  SENSITIVE_RATE_LIMIT_WINDOW_MS: positiveInteger(15 * 60 * 1000),
-  SENSITIVE_RATE_LIMIT_MAX: positiveInteger(isTestEnvironment ? testRateLimitMax : 20),
-  GENERAL_RATE_LIMIT_WINDOW_MS: positiveInteger(15 * 60 * 1000),
-  GENERAL_RATE_LIMIT_MAX: positiveInteger(isTestEnvironment ? testRateLimitMax : 100),
+  AUTH_RATE_LIMIT_WINDOW_MS: positiveInteger(15 * 60 * 1000, 'AUTH_RATE_LIMIT_WINDOW_MS'),
+  AUTH_RATE_LIMIT_MAX: positiveInteger(isTestEnvironment ? testRateLimitMax : 10, 'AUTH_RATE_LIMIT_MAX'),
+  SENSITIVE_RATE_LIMIT_WINDOW_MS: positiveInteger(15 * 60 * 1000, 'SENSITIVE_RATE_LIMIT_WINDOW_MS'),
+  SENSITIVE_RATE_LIMIT_MAX: positiveInteger(isTestEnvironment ? testRateLimitMax : 20, 'SENSITIVE_RATE_LIMIT_MAX'),
+  GENERAL_RATE_LIMIT_WINDOW_MS: positiveInteger(15 * 60 * 1000, 'GENERAL_RATE_LIMIT_WINDOW_MS'),
+  GENERAL_RATE_LIMIT_MAX: positiveInteger(isTestEnvironment ? testRateLimitMax : 100, 'GENERAL_RATE_LIMIT_MAX'),
   TRUST_PROXY: trustProxySchema,
 }).superRefine((data, ctx) => {
   if (data.NODE_ENV === 'production') {

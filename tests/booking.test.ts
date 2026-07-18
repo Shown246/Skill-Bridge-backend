@@ -485,7 +485,7 @@ describe('Booking Core API', () => {
   describe('GET /api/v1/bookings', () => {
     beforeEach(async () => {
       // Create a booking for the main student
-      await request(app)
+      const res1 = await request(app)
         .post('/api/v1/bookings')
         .set('Authorization', `Bearer ${studentToken}`)
         .send({
@@ -494,9 +494,10 @@ describe('Booking Core API', () => {
           startAt: futureMondayAt(9).toISOString(),
           durationMinutes: 60,
         });
+      expect(res1.status).toBe(201);
 
       // Create a second booking at a non-overlapping time
-      await request(app)
+      const res2 = await request(app)
         .post('/api/v1/bookings')
         .set('Authorization', `Bearer ${studentToken}`)
         .send({
@@ -505,6 +506,7 @@ describe('Booking Core API', () => {
           startAt: futureMondayAt(10, 30).toISOString(),
           durationMinutes: 60,
         });
+      expect(res2.status).toBe(201);
     });
 
     it('should list only student\'s own bookings when logged in as STUDENT', async () => {
