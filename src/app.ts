@@ -30,7 +30,8 @@ app.set('trust proxy', env.TRUST_PROXY);
 app.use(requestIdMiddleware);
 
 // 2. Security headers
-app.use(helmet());
+const helmetFn = typeof helmet === 'function' ? helmet : (helmet as any).default;
+app.use((helmetFn as any)());
 
 // 3. CORS configuration
 app.use(

@@ -1,4 +1,4 @@
-import { jest, describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
+import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import request from 'supertest';
 import { prisma } from '../src/config/db.js';
 
@@ -132,23 +132,28 @@ describe('Tutor Bookable Slots API', () => {
   });
 
   it('should generate valid slots matching weekly availability', async () => {
-    // 2026-07-20 is a Monday
-    const res = await request(app)
-      .get(`/api/v1/tutors/${tutorId}/slots`)
-      .query({
-        dateFrom: '2026-07-20T00:00:00.000Z',
-        dateTo: '2026-07-21T00:00:00.000Z',
-      });
+    const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(new Date('2026-07-20T00:00:00.000Z').getTime());
+    try {
+      // 2026-07-20 is a Monday
+      const res = await request(app)
+        .get(`/api/v1/tutors/${tutorId}/slots`)
+        .query({
+          dateFrom: '2026-07-20T00:00:00.000Z',
+          dateTo: '2026-07-21T00:00:00.000Z',
+        });
 
-    expect(res.status).toBe(200);
-    expect(res.body.success).toBe(true);
-    expect(res.body.data.slots.length).toBeGreaterThan(0);
-    
-    // Slot at 09:00:00.000Z should have durations 30, 60, 90, 120
-    const slot09 = res.body.data.slots.find((s: any) => s.startAt === '2026-07-20T09:00:00.000Z');
-    expect(slot09).toBeDefined();
-    expect(slot09.endAtByDuration['30']).toBe('2026-07-20T09:30:00.000Z');
-    expect(slot09.endAtByDuration['120']).toBe('2026-07-20T11:00:00.000Z');
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.slots.length).toBeGreaterThan(0);
+      
+      // Slot at 09:00:00.000Z should have durations 30, 60, 90, 120
+      const slot09 = res.body.data.slots.find((s: any) => s.startAt === '2026-07-20T09:00:00.000Z');
+      expect(slot09).toBeDefined();
+      expect(slot09.endAtByDuration['30']).toBe('2026-07-20T09:30:00.000Z');
+      expect(slot09.endAtByDuration['120']).toBe('2026-07-20T11:00:00.000Z');
+    } finally {
+      dateSpy.mockRestore();
+    }
   });
 
   it('should exclude slots that overlap with confirmed bookings', async () => {
@@ -170,20 +175,25 @@ describe('Tutor Bookable Slots API', () => {
       },
     });
 
-    const res = await request(app)
-      .get(`/api/v1/tutors/${tutorId}/slots`)
-      .query({
-        dateFrom: '2026-07-20T00:00:00.000Z',
-        dateTo: '2026-07-21T00:00:00.000Z',
-      });
+    const dateSpy = jest.spyOn(Date, 'now').mockReturnValue(new Date('2026-07-20T00:00:00.000Z').getTime());
+    try {
+      const res = await request(app)
+        .get(`/api/v1/tutors/${tutorId}/slots`)
+        .query({
+          dateFrom: '2026-07-20T00:00:00.000Z',
+          dateTo: '2026-07-21T00:00:00.000Z',
+        });
 
-    // The slot starting at 10:00 should not exist, and 09:30 slot should not have 60-min option (ends at 10:30 which overlaps)
-    const slot10 = res.body.data.slots.find((s: any) => s.startAt === '2026-07-20T10:00:00.000Z');
-    expect(slot10).toBeUndefined();
+      // The slot starting at 10:00 should not exist, and 09:30 slot should not have 60-min option (ends at 10:30 which overlaps)
+      const slot10 = res.body.data.slots.find((s: any) => s.startAt === '2026-07-20T10:00:00.000Z');
+      expect(slot10).toBeUndefined();
 
-    const slot0930 = res.body.data.slots.find((s: any) => s.startAt === '2026-07-20T09:30:00.000Z');
-    if (slot0930) {
-      expect(slot0930.endAtByDuration['60']).toBeUndefined();
+      const slot0930 = res.body.data.slots.find((s: any) => s.startAt === '2026-07-20T09:30:00.000Z');
+      if (slot0930) {
+        expect(slot0930.endAtByDuration['60']).toBeUndefined();
+      }
+    } finally {
+      dateSpy.mockRestore();
     }
   });
 });

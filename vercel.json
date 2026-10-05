@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "skill-bridge-backend",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/api"
+    }
+  ]
+}
