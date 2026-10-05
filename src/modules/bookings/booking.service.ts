@@ -194,7 +194,7 @@ export class BookingService {
       throw new AppError(400, 'INVALID_ALIGNMENT', 'Booking start time must align to 30-minute boundaries.');
     }
 
-    if (startAt.getTime() <= Date.now()) {
+    if (startAt.getTime() <= this.now().getTime()) {
       throw new AppError(400, 'PAST_START_TIME', 'Booking start time must be in the future.');
     }
 
@@ -268,6 +268,7 @@ export class BookingService {
         durationMinutes: data.durationMinutes,
         hourlyRateSnapshot: rate,
         quotedPrice: price,
+        currencyCode: tutor.currencyCode,
         note: data.note,
       }, tx);
     }, {

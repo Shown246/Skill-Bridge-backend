@@ -225,4 +225,22 @@ describe('hardening configuration', () => {
 
     logSpy.mockRestore();
   });
+
+  it('handles malformed JSON body with HTTP 400 and INVALID_JSON error envelope', async () => {
+    const res = await request(app)
+      .post('/api/v1/categories')
+      .set('X-Forwarded-For', '198.51.100.99')
+      .set('Content-Type', 'application/json')
+      .send('{ "malformed": json');
+
+    expect(res.status).toBe(400);
+    expect(res.body).toMatchObject({
+      success: false,
+      error: {
+        code: 'INVALID_JSON',
+        message: 'Malformed JSON in request body.',
+      },
+      requestId: expect.stringMatching(/^req_[a-f0-9]+$/),
+    });
+  });
 });

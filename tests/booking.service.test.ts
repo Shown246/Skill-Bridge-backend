@@ -318,6 +318,23 @@ describe('Booking Core Service & Repository Tests', () => {
       ).rejects.toThrow(new AppError(400, 'PAST_START_TIME', 'Booking start time must be in the future.'));
     });
 
+    it('uses injected clock when validating future start times', async () => {
+      // Mock clock to 2030-01-01T00:00:00Z
+      const simulatedNow = new Date('2030-01-01T00:00:00.000Z');
+      const timeAwareService = new BookingService(() => simulatedNow);
+
+      // 2029-06-04 is in the future relative to real time, but in the past relative to simulatedNow
+      const startAt2029 = '2029-06-04T10:00:00.000Z';
+      await expect(
+        timeAwareService.create(studentId, {
+          tutorId: tutorProfileId,
+          categoryId,
+          startAt: startAt2029,
+          durationMinutes: 60,
+        })
+      ).rejects.toThrow(new AppError(400, 'PAST_START_TIME', 'Booking start time must be in the future.'));
+    });
+
     it('should throw MIDNIGHT_CROSSING if duration causes booking to wrap across UTC midnight', async () => {
       await expect(
         bookingService.create(studentId, {
@@ -415,6 +432,7 @@ describe('Booking Core Service & Repository Tests', () => {
       expect(booking.status).toBe('CONFIRMED');
       expect(Number(booking.hourlyRateSnapshot)).toBe(50.00);
       expect(Number(booking.quotedPrice)).toBe(50.00); // 50 * 60 / 60
+      expect(booking.currencyCode).toBe('USD');
       expect(booking.note).toBe('Calculus review');
 
       // Check status history
@@ -425,6 +443,71 @@ describe('Booking Core Service & Repository Tests', () => {
       expect(history?.toStatus).toBe('CONFIRMED');
       expect(history?.actorUserId).toBe(studentId);
       expect(history?.actorRole).toBe('STUDENT');
+    });
+
+    it('snapshots the tutor custom currencyCode when creating a booking', async () => {
+      const eurTutorUser = await prisma.user.create({
+        data: {
+          id: 'user-tutor-eur-custom',
+          name: 'EUR Tutor',
+          email: 'eur-tutor-custom@example.com',
+          emailVerified: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          role: 'TUTOR',
+          status: 'ACTIVE',
+        },
+      });
+      const eurProfile = await prisma.tutorProfile.create({
+        data: {
+          userId: eurTutorUser.id,
+          headline: 'European Physics Tutor',
+          bio: 'Physics tutoring across Europe for higher secondary students.',
+          experienceYears: 4,
+          hourlyRate: 60.00,
+          currencyCode: 'EUR',
+          approvalStatus: 'APPROVED',
+        },
+      });
+      await prisma.tutorCategory.create({
+        data: {
+          tutorProfileId: eurProfile.id,
+          categoryId,
+        },
+      });
+      const avail = await prisma.weeklyAvailability.create({
+        data: {
+          tutorProfileId: eurProfile.id,
+          dayOfWeek: 1,
+          startMinuteUtc: 540,
+          endMinuteUtc: 1020,
+          isActive: true,
+        },
+      });
+
+      let createdBookingId: string | undefined;
+      try {
+        const booking = await bookingService.create(studentId, {
+          tutorId: eurProfile.id,
+          categoryId,
+          startAt: futureMondayAt(14).toISOString(),
+          durationMinutes: 60,
+        });
+
+        createdBookingId = booking.id;
+        expect(booking.currencyCode).toBe('EUR');
+      } finally {
+        if (createdBookingId) {
+          await prisma.bookingStatusHistory.deleteMany({ where: { bookingId: createdBookingId } });
+          await prisma.booking.delete({ where: { id: createdBookingId } });
+        }
+        await prisma.weeklyAvailability.delete({ where: { id: avail.id } });
+        await prisma.tutorCategory.delete({
+          where: { tutorProfileId_categoryId: { tutorProfileId: eurProfile.id, categoryId } },
+        });
+        await prisma.tutorProfile.delete({ where: { id: eurProfile.id } });
+        await prisma.user.delete({ where: { id: eurTutorUser.id } });
+      }
     });
 
     it('should throw BOOKING_SLOT_CONFLICT if new booking overlaps with the existing confirmed booking', async () => {

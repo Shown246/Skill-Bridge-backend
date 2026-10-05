@@ -1,6 +1,7 @@
-import { jest, describe, it, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
+import { jest, describe, it, expect, beforeAll, afterAll } from '@jest/globals';
 import request from 'supertest';
 import { prisma } from '../src/config/db.js';
+import { publicTutorSearchSchema } from '../src/modules/tutors/tutor.schemas.js';
 
 jest.setTimeout(60000);
 
@@ -185,6 +186,25 @@ describe('Public Tutor Search & Directory API', () => {
       // The approved tutor has hourlyRate = 30
       const res = await request(app).get('/api/v1/tutors?minRate=25&maxRate=35');
 
+      expect(res.status).toBe(200);
+      expect(res.body.data).toHaveLength(1);
+    });
+
+    it('should correctly parse minRate of 0 and filter tutors', async () => {
+      const parsedNumeric = publicTutorSearchSchema.parse({ minRate: 0 });
+      expect(parsedNumeric.minRate).toBe(0);
+
+      const parsedString = publicTutorSearchSchema.parse({ minRate: '0' });
+      expect(parsedString.minRate).toBe(0);
+
+      const parsedEmpty = publicTutorSearchSchema.parse({ minRate: '' });
+      expect(parsedEmpty.minRate).toBeUndefined();
+
+      const parsedNull = publicTutorSearchSchema.parse({ minRate: null });
+      expect(parsedNull.minRate).toBeUndefined();
+
+      // The approved tutor has hourlyRate = 30
+      const res = await request(app).get('/api/v1/tutors?minRate=0&maxRate=35');
       expect(res.status).toBe(200);
       expect(res.body.data).toHaveLength(1);
     });

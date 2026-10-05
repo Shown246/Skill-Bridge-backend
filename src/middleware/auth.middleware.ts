@@ -80,7 +80,12 @@ export const requireAuth = async (req: Request, res: Response, next: NextFunctio
   } catch (error: any) {
     if (error instanceof AppError) {
       next(error);
-    } else if (error.code?.startsWith('ERR_JWT_') || error.code?.startsWith('ERR_JWS_')) {
+    } else if (
+      error.code?.startsWith('ERR_JWT_') ||
+      error.code?.startsWith('ERR_JWS_') ||
+      error.code === 'ERR_JWKS_NO_MATCHING_KEY' ||
+      error.code === 'ERR_JWKS_MULTIPLE_MATCHING_KEYS'
+    ) {
       const isExpired = error.code === 'ERR_JWT_EXPIRED';
       const errorCode = isExpired ? 'TOKEN_EXPIRED' : 'TOKEN_INVALID';
       const errorMsg = isExpired ? 'Token has expired.' : 'Invalid token.';

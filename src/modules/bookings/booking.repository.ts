@@ -18,6 +18,7 @@ export class BookingRepository {
     durationMinutes: number;
     hourlyRateSnapshot: number;
     quotedPrice: number;
+    currencyCode?: string;
     note?: string;
   }, tx: TransactionClient) {
     const booking = await tx.booking.create({
@@ -30,6 +31,7 @@ export class BookingRepository {
         durationMinutes: data.durationMinutes,
         hourlyRateSnapshot: data.hourlyRateSnapshot,
         quotedPrice: data.quotedPrice,
+        currencyCode: data.currencyCode,
         note: data.note,
         status: 'CONFIRMED',
       },

@@ -11,6 +11,13 @@ jest.unstable_mockModule('jose', () => {
     createRemoteJWKSet: (url: any, options: any) => {
       // Return a function that fetches the key directly from the database
       return async (protectedHeader: any, token: any) => {
+        if (protectedHeader?.kid === 'unknown-kid') {
+          throw new actualJose.errors.JWKSNoMatchingKey();
+        }
+        if (protectedHeader?.kid === 'multiple-kid') {
+          throw new actualJose.errors.JWKSMultipleMatchingKeys();
+        }
+
         // Query the database for the active JWKS key
         const { prisma: db } = await import('../src/config/db.js');
         const jwks = await db.jwks.findFirst({
@@ -166,6 +173,39 @@ describe('Better Auth & Identity Integration', () => {
         .get('/api/v1/me')
         .set('Authorization', 'Bearer invalid-token-value');
       expect(invalidTokenRes.status).toBe(401);
+    });
+
+    it('should return 401 TOKEN_INVALID when token has no matching key or ambiguous keys in JWKS', async () => {
+      const actualJose = await import('jose');
+      const { privateKey } = await actualJose.generateKeyPair('EdDSA');
+
+      // Test ERR_JWKS_NO_MATCHING_KEY
+      const unknownKeyToken = await new actualJose.SignJWT({ sub: 'user-123' })
+        .setProtectedHeader({ alg: 'EdDSA', kid: 'unknown-kid' })
+        .sign(privateKey);
+
+      const resUnknown = await request(app)
+        .get('/api/v1/me')
+        .set('Authorization', `Bearer ${unknownKeyToken}`);
+
+      expect(resUnknown.status).toBe(401);
+      expect(resUnknown.body.success).toBe(false);
+      expect(resUnknown.body.error.code).toBe('TOKEN_INVALID');
+      expect(resUnknown.body.error.message).toBe('Invalid token.');
+
+      // Test ERR_JWKS_MULTIPLE_MATCHING_KEYS
+      const multipleKeyToken = await new actualJose.SignJWT({ sub: 'user-123' })
+        .setProtectedHeader({ alg: 'EdDSA', kid: 'multiple-kid' })
+        .sign(privateKey);
+
+      const resMultiple = await request(app)
+        .get('/api/v1/me')
+        .set('Authorization', `Bearer ${multipleKeyToken}`);
+
+      expect(resMultiple.status).toBe(401);
+      expect(resMultiple.body.success).toBe(false);
+      expect(resMultiple.body.error.code).toBe('TOKEN_INVALID');
+      expect(resMultiple.body.error.message).toBe('Invalid token.');
     });
 
     it('should update name, image, and phone successfully', async () => {

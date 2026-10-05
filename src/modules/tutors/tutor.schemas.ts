@@ -70,13 +70,13 @@ export const publicTutorSearchSchema = z.object({
   category: z.string().optional(),
   minRate: z
     .preprocess(
-      (val) => (val ? parseFloat(val as string) : undefined),
+      (val) => (val === undefined || val === null || val === '' ? undefined : Number(val)),
       z.number().nonnegative().optional()
     )
     .optional(),
   maxRate: z
     .preprocess(
-      (val) => (val ? parseFloat(val as string) : undefined),
+      (val) => (val === undefined || val === null || val === '' ? undefined : Number(val)),
       z.number().positive().optional()
     )
     .optional(),

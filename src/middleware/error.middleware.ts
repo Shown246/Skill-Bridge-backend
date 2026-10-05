@@ -25,6 +25,13 @@ export const errorHandler = (
     code = 'VALIDATION_ERROR';
     message = 'Validation failed.';
     fieldErrors = err.flatten().fieldErrors;
+  } else if (
+    (err instanceof SyntaxError && 'status' in err && (err as any).status === 400) ||
+    (err && typeof err === 'object' && (err as any).type === 'entity.parse.failed')
+  ) {
+    statusCode = 400;
+    code = 'INVALID_JSON';
+    message = 'Malformed JSON in request body.';
   } else if (err && typeof err === 'object' && typeof err.code === 'string') {
     // Prisma client errors
     if (err.code === 'P2002') {
