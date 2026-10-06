@@ -106,6 +106,10 @@ export class CategoryService {
   async getActiveCategories(options: { search?: string; limit?: number }) {
     return categoryRepository.findActive(options);
   }
+
+  async getAllCategories(options: { search?: string; limit?: number; isActive?: boolean }) {
+    return categoryRepository.findAll(options);
+  }
 }
 
 export const categoryService = new CategoryService();

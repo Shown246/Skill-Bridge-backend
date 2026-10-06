@@ -370,4 +370,67 @@ describe('Category Administration API', () => {
       expect(res.body.data.length).toBe(1);
     });
   });
+
+  describe('GET /api/v1/admin/categories', () => {
+    beforeEach(async () => {
+      await prisma.category.createMany({
+        data: [
+          { name: 'Algebra', slug: 'algebra', isActive: true, description: 'Basic Math Algebra' },
+          { name: 'Geometry', slug: 'geometry', isActive: true, description: 'Basic Math Geometry' },
+          { name: 'Chemistry', slug: 'chemistry', isActive: false, description: 'Science Chemistry' },
+        ],
+      });
+    });
+
+    it('should reject unauthenticated requests with 401', async () => {
+      const res = await request(app).get('/api/v1/admin/categories');
+      expect(res.status).toBe(401);
+    });
+
+    it('should reject non-admin requests with 403', async () => {
+      const resStudent = await request(app)
+        .get('/api/v1/admin/categories')
+        .set('Authorization', `Bearer ${studentToken}`);
+      expect(resStudent.status).toBe(403);
+
+      const resTutor = await request(app)
+        .get('/api/v1/admin/categories')
+        .set('Authorization', `Bearer ${tutorToken}`);
+      expect(resTutor.status).toBe(403);
+    });
+
+    it('should allow admin and return all categories including inactive ones', async () => {
+      const res = await request(app)
+        .get('/api/v1/admin/categories')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      // Both active (Algebra, Geometry) and inactive (Chemistry) should be returned
+      const names = res.body.data.map((c: any) => c.name);
+      expect(names).toContain('Algebra');
+      expect(names).toContain('Geometry');
+      expect(names).toContain('Chemistry');
+    });
+
+    it('should filter by isActive status', async () => {
+      const resInactive = await request(app)
+        .get('/api/v1/admin/categories?isActive=false')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(resInactive.status).toBe(200);
+      expect(resInactive.body.data.every((c: any) => c.isActive === false)).toBe(true);
+      expect(resInactive.body.data.some((c: any) => c.name === 'Chemistry')).toBe(true);
+    });
+
+    it('should include CORS exposedHeaders in responses', async () => {
+      const res = await request(app)
+        .get('/api/v1/categories')
+        .set('Origin', 'http://localhost:3000');
+
+      const exposed = res.headers['access-control-expose-headers'];
+      expect(exposed).toBeDefined();
+      expect(exposed.toLowerCase()).toContain('x-request-id');
+    });
+  });
 });

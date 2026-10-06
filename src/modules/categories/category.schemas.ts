@@ -50,3 +50,20 @@ export const getCategoriesQuerySchema = z.object({
     )
     .optional(),
 });
+
+export const getAdminCategoriesQuerySchema = z.object({
+  search: z.string().optional(),
+  limit: z
+    .preprocess(
+      (val) => (val ? parseInt(val as string, 10) : undefined),
+      z.number().int().positive()
+    )
+    .optional(),
+  isActive: z
+    .preprocess((val) => {
+      if (val === 'true' || val === true) return true;
+      if (val === 'false' || val === false) return false;
+      return undefined;
+    }, z.boolean().optional())
+    .optional(),
+});

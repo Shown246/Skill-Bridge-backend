@@ -4,6 +4,7 @@ import {
   updateCategorySchema,
   updateCategoryStatusSchema,
   getCategoriesQuerySchema,
+  getAdminCategoriesQuerySchema,
 } from './category.schemas.js';
 import { categoryService } from './category.service.js';
 
@@ -52,6 +53,19 @@ export const getCategories = async (req: Request, res: Response, next: NextFunct
   try {
     const { search, limit } = getCategoriesQuerySchema.parse(req.query);
     const categories = await categoryService.getActiveCategories({ search, limit });
+    res.status(200).json({
+      success: true,
+      data: categories,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+export const getAdminCategories = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { search, limit, isActive } = getAdminCategoriesQuerySchema.parse(req.query);
+    const categories = await categoryService.getAllCategories({ search, limit, isActive });
     res.status(200).json({
       success: true,
       data: categories,

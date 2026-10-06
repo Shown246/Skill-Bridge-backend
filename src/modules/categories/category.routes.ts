@@ -5,6 +5,7 @@ import {
   updateCategory,
   updateCategoryStatus,
   getCategories,
+  getAdminCategories,
 } from './category.controller.js';
 
 const router = Router();
@@ -13,6 +14,7 @@ const router = Router();
 router.get('/categories', getCategories);
 
 // Admin-only CRUD routes
+router.get('/admin/categories', requireAuth, requireRole('ADMIN'), getAdminCategories);
 router.post('/admin/categories', requireAuth, requireRole('ADMIN'), createCategory);
 router.patch('/admin/categories/:categoryId', requireAuth, requireRole('ADMIN'), updateCategory);
 router.patch('/admin/categories/:categoryId/status', requireAuth, requireRole('ADMIN'), updateCategoryStatus);

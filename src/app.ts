@@ -38,6 +38,13 @@ app.use(
   cors({
     origin: env.FRONTEND_ORIGIN,
     credentials: true,
+    exposedHeaders: [
+      'X-Request-Id',
+      'RateLimit-Limit',
+      'RateLimit-Remaining',
+      'RateLimit-Reset',
+      'Retry-After',
+    ],
   })
 );
 

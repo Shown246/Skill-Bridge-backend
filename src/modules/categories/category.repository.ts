@@ -80,6 +80,39 @@ export class CategoryRepository {
       },
     });
   }
+
+  async findAll(options: { search?: string; limit?: number; isActive?: boolean }) {
+    const where: Prisma.CategoryWhereInput = {};
+
+    if (options.isActive !== undefined) {
+      where.isActive = options.isActive;
+    }
+
+    if (options.search) {
+      where.OR = [
+        {
+          name: {
+            contains: options.search,
+            mode: 'insensitive',
+          },
+        },
+        {
+          description: {
+            contains: options.search,
+            mode: 'insensitive',
+          },
+        },
+      ];
+    }
+
+    return prisma.category.findMany({
+      where,
+      take: options.limit,
+      orderBy: {
+        name: 'asc',
+      },
+    });
+  }
 }
 
 export const categoryRepository = new CategoryRepository();
